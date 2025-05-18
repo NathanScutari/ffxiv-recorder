@@ -4,10 +4,7 @@ export type ConfigurationSchema = {
   storagePath: string;
   bufferStoragePath: string;
   separateBufferPath: boolean;
-  retailLogPath: string;
-  classicLogPath: string;
-  eraLogPath: string;
-  retailPtrLogPath: string;
+  xivLogPath: string;
   maxStorage: number;
   monitorIndex: number;
   selectedCategory: number;
@@ -23,10 +20,7 @@ export type ConfigurationSchema = {
   obsQuality: string;
   obsCaptureMode: string; // 'window_capture' or 'game_capture' or 'monitor_capture'
   obsRecEncoder: string;
-  recordRetail: boolean;
-  recordClassic: boolean;
-  recordEra: boolean;
-  recordRetailPtr: boolean;
+  recordFFXIV: boolean;
   recordRaids: boolean;
   recordDungeons: boolean;
   recordTwoVTwo: boolean;
@@ -38,6 +32,7 @@ export type ConfigurationSchema = {
   captureCursor: boolean;
   minKeystoneLevel: number;
   minRaidDifficulty: string;
+  playerName: string;
   minimizeOnQuit: boolean;
   minimizeToTray: boolean;
   chatOverlayEnabled: boolean;
@@ -125,6 +120,11 @@ export const configSchema = {
     type: 'string',
     default: '',
   },
+  xivLogPath: {
+    description: Phrase.XIVLogPathDescription,
+    type: 'string',
+    default: '',
+  },
   maxStorage: {
     description: Phrase.MaxStorageDescription,
     type: 'integer',
@@ -206,6 +206,11 @@ export const configSchema = {
     type: 'string',
     default: 'obs_x264',
   },
+  recordFFXIV: {
+    description: Phrase.RecordXIVDescription,
+    type: 'boolean',
+    default: false,
+  },
   recordRetail: {
     description: Phrase.RecordRetailDescription,
     type: 'boolean',
@@ -280,6 +285,11 @@ export const configSchema = {
     description: Phrase.MinRaidDifficultyDescription,
     type: 'string',
     default: 'LFR',
+  },
+  playerName: {
+    description: Phrase.PlayerNameDescription,
+    type: 'string',
+    default: '',
   },
   minimizeOnQuit: {
     description: Phrase.MinimizeOnQuitDescription,

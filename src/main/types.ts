@@ -12,6 +12,7 @@ import { DateValueType } from 'react-tailwindcss-datepicker';
 enum Flavour {
   Retail = 'Retail',
   Classic = 'Classic',
+  FFXIV = 'FFXIV'
 }
 
 /**
@@ -93,10 +94,8 @@ enum UnitFlags {
  */
 type PlayerDeathType = {
   name: string;
-  specId: number;
   date: Date;
   timestamp: number;
-  friendly: boolean;
 };
 
 /**
@@ -238,10 +237,8 @@ type CloudSignedMetadata = CloudMetadata & {
  */
 type RawCombatant = {
   _GUID?: string;
-  _teamID?: number;
-  _specID?: number;
   _name?: string;
-  _realm?: string;
+  _jobName?: string;
 };
 
 /**
@@ -398,14 +395,8 @@ type ObsAudioConfig = {
 };
 
 type FlavourConfig = {
-  recordRetail: boolean;
-  retailLogPath: string;
-  recordClassic: boolean;
-  classicLogPath: string;
-  recordEra: boolean;
-  eraLogPath: string;
-  recordRetailPtr: boolean;
-  retailPtrLogPath: string;
+  recordFFXIV: boolean;
+  xivLogPath: string;
 };
 
 type CloudConfig = {

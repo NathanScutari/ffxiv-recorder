@@ -21,6 +21,7 @@ import {
 import LogLine from './LogLine';
 import { VideoCategory } from '../types/VideoCategory';
 import { allowRecordCategory, getFlavourConfig } from '../utils/configUtils';
+import { CombatDataEvent, CombatantData } from './CombatData';
 
 /**
  * Generic LogHandler class. Everything in this class must be valid for both
@@ -65,7 +66,7 @@ export default abstract class LogHandler extends EventEmitter {
     super();
 
     this.mainWindow = mainWindow;
-    this.recorder = recorder;
+     this.recorder = recorder;
 
     this.combatLogWatcher = new CombatLogWatcher(logPath, dataTimeout);
     this.combatLogWatcher.watch();
@@ -82,36 +83,20 @@ export default abstract class LogHandler extends EventEmitter {
     this.combatLogWatcher.removeAllListeners();
   }
 
-  protected async handleEncounterStartLine(line: LogLine, flavour: Flavour) {
-    console.debug('[LogHandler] Handling ENCOUNTER_START line:', line);
+  protected async handleEncounterStartLine(
+    event: CombatDataEvent,
+    flavour: Flavour,
+  ) {
+    console.debug('[LogHandler] Handling ENCOUNTER_START event:');
+    let startDate;
+    let encounterName;
 
-    const startDate = line.date();
-    const encounterID = parseInt(line.arg(1), 10);
-    const difficultyID = parseInt(line.arg(3), 10);
-    const encounterName = line.arg(2);
-
-    const isRecognisedDifficulty = Object.prototype.hasOwnProperty.call(
-      instanceDifficulty,
-      difficultyID,
-    );
-
-    if (!isRecognisedDifficulty) {
-      throw new Error(`[LogHandler] Unknown difficulty ID: ${difficultyID}`);
-    }
-
-    const isRaidEncounter =
-      instanceDifficulty[difficultyID].partyType === 'raid';
-
-    if (!isRaidEncounter) {
-      console.debug('[LogHandler] Not a raid encounter, not recording');
-      return;
-    }
+    startDate = new Date(Date.now());
+    encounterName = event.Encounter.title;
 
     const activity = new RaidEncounter(
       startDate,
-      encounterID,
       encounterName,
-      difficultyID,
       flavour,
       this.cfg,
     );
@@ -119,22 +104,33 @@ export default abstract class LogHandler extends EventEmitter {
     await this.startActivity(activity);
   }
 
-  protected async handleEncounterEndLine(line: LogLine) {
-    console.debug('[LogHandler] Handling ENCOUNTER_END line:', line);
+  protected isPotentialBoss(c: CombatantData): boolean {
+    const hasJob = !!c.Job;
+    const hp = parseInt(c.damagetaken ?? '0') || 0;
+
+    return !hasJob && hp > 1000000; // seuil arbitraire à ajuster
+  }
+
+  protected async handleEncounterEndLine(event: CombatDataEvent) {
+    console.debug('[LogHandler] Handling ENCOUNTER_END event:');
 
     if (!this.activity) {
       console.info('[LogHandler] Encounter stop with no active encounter');
       return;
     }
 
-    const result = Boolean(parseInt(line.arg(5), 10));
+    const boss = Object.values(event.Combatant)
+      .filter(this.isPotentialBoss)
+      .sort((a, b) => parseInt(b.damagetaken ?? "0") - parseInt(a.damagetaken ?? "0"))[0];
+
+    const result = (boss?.deaths && boss?.deaths >= 1) === true ?? false;
 
     if (result) {
       const overrun = this.cfg.get<number>('raidOverrun');
       this.activity.overrun = overrun;
     }
 
-    this.activity.end(line.date(), result);
+    this.activity.end(new Date(Date.now()), result);
     await this.endActivity();
   }
 
@@ -159,7 +155,6 @@ export default abstract class LogHandler extends EventEmitter {
 
     const playerName = line.arg(6);
     const playerGUID = line.arg(5);
-    const playerSpecId = this.activity.getCombatant(playerGUID)?.specID ?? 0;
 
     // Add player death and subtract 2 seconds from the time of death to allow the
     // user to view a bit of the video before the death and not at the actual millisecond
@@ -175,10 +170,8 @@ export default abstract class LogHandler extends EventEmitter {
 
     const playerDeath: PlayerDeathType = {
       name: playerName,
-      specId: playerSpecId,
       date: line.date(),
       timestamp: relativeTime,
-      friendly: isUnitFriendly(unitFlags),
     };
 
     this.activity.addDeath(playerDeath);
@@ -403,7 +396,7 @@ export default abstract class LogHandler extends EventEmitter {
       return combatant;
     }
 
-    [combatant.name, combatant.realm] = ambiguate(srcNameRealm);
+    [combatant.name] = ambiguate(srcNameRealm);
     this.activity.addCombatant(combatant);
     return combatant;
   }

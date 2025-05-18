@@ -6,11 +6,11 @@ import { FlavourConfig } from '../main/types';
 
 /**
  * The Poller singleton periodically checks the list of WoW active processes.
- * If the state changes, it emits either a 'wowProcessStart' or
+ * If the state changes, it emits either a 'xivProcessStart' or
  * 'wowProcessStop' event.
  */
 export default class Poller extends EventEmitter {
-  private _isWowRunning = false;
+  private _isXIVRunning = false;
 
   private _pollInterval: NodeJS.Timer | undefined;
 
@@ -47,12 +47,12 @@ export default class Poller extends EventEmitter {
     this.flavourConfig = flavourConfig;
   }
 
-  get isWowRunning() {
-    return this._isWowRunning;
+  get isXIVRunning() {
+    return this._isXIVRunning;
   }
 
-  set isWowRunning(value) {
-    this._isWowRunning = value;
+  set isXIVRunning(value) {
+    this._isXIVRunning = value;
   }
 
   get pollInterval() {
@@ -69,7 +69,7 @@ export default class Poller extends EventEmitter {
 
   reset() {
     console.info('[Poller] Reset process poller');
-    this.isWowRunning = false;
+    this.isXIVRunning = false;
 
     if (this.child) {
       this.child.kill();
@@ -91,29 +91,25 @@ export default class Poller extends EventEmitter {
 
   private handleStdout = (data: any) => {
     try {
-      const json = JSON.parse(data);
+      const json = JSON.parse(data.toString().trim());
 
-      const { Retail, Classic } = json;
-      const { recordRetail, recordClassic, recordEra, recordRetailPtr } =
+      const { FFXIV } = json;
+      const { recordFFXIV } =
         this.flavourConfig;
 
-      const retailCheck = Retail && (recordRetail || recordRetailPtr);
-      const classicCheck = Classic && recordClassic;
-      const eraCheck = Classic && recordEra;
+      const ffxivCheck = FFXIV && recordFFXIV;
 
       // We don't care to do anything better in the scenario of multiple
       // processes running. We don't support users multi-boxing.
-      if (!this.isWowRunning && (retailCheck || classicCheck || eraCheck)) {
-        this.isWowRunning = true;
-        this.emit('wowProcessStart');
+      if (!this.isXIVRunning && ffxivCheck) {
+        this.isXIVRunning = true;
+        this.emit('xivProcessStart');
       } else if (
-        this.isWowRunning &&
-        !retailCheck &&
-        !classicCheck &&
-        !eraCheck
+        this.isXIVRunning &&
+        !ffxivCheck
       ) {
-        this.isWowRunning = false;
-        this.emit('wowProcessStop');
+        this.isXIVRunning = false;
+        this.emit('xivProcessStop');
       }
     } catch (error) {
       // Think we can hit this on sleeping/resuming from sleep.

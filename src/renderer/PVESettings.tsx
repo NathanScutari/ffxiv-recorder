@@ -42,6 +42,7 @@ const PVESettings = (props: IProps) => {
     setConfigValues({
       recordRaids: config.recordRaids,
       minEncounterDuration: config.minEncounterDuration,
+      playerName: config.playerName,
       minRaidDifficulty: config.minRaidDifficulty,
       recordDungeons: config.recordDungeons,
       minKeystoneLevel: config.minKeystoneLevel,
@@ -53,6 +54,7 @@ const PVESettings = (props: IProps) => {
     config.minEncounterDuration,
     config.minKeystoneLevel,
     config.minRaidDifficulty,
+    config.playerName,
     config.raidOverrun,
     config.recordDungeons,
     config.recordRaids,
@@ -150,53 +152,49 @@ const PVESettings = (props: IProps) => {
     );
   };
 
-  const setMinRaidDifficulty = (value: string) => {
+  const setPlayerName = (event: React.ChangeEvent<HTMLInputElement>) => {
     setConfig((prevState) => {
+      let value = event.target.value;
+
+      if (value == "YOU") {
+        value = "";
+      }
       return {
         ...prevState,
-        minRaidDifficulty: value,
+        playerName: value,
       };
     });
   };
 
-  const getMinRaidDifficultySelect = () => {
+  const getPlayerName = () => {
     if (!config.recordRaids) {
       return <></>;
     }
 
     return (
       <div className="flex flex-col w-1/4 min-w-40 max-w-60">
-        <Label htmlFor="minRaidDifficulty" className="flex items-center">
+        <Label htmlFor="playerName" className="flex items-center">
           {getLocalePhrase(
             appState.language,
-            Phrase.MinimumRaidDifficultyLabel,
+            Phrase.PlayerNameLabel,
           )}
           <Tooltip
             content={getLocalePhrase(
               appState.language,
-              configSchema.minRaidDifficulty.description,
+              configSchema.playerName.description,
             )}
             side="top"
           >
             <Info size={20} className="inline-flex ml-2" />
           </Tooltip>
         </Label>
-        <Select
-          onValueChange={setMinRaidDifficulty}
+        <Input
+          value={config.playerName}
+          name="playerName"
           disabled={!config.recordRaids}
-          value={config.minRaidDifficulty}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select a difficulty" />
-          </SelectTrigger>
-          <SelectContent>
-            {raidDifficultyOptions.map((difficulty) => (
-              <SelectItem key={difficulty.name} value={difficulty.name}>
-                {getLocalePhrase(appState.language, difficulty.phrase)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={setPlayerName}
+          type="text"
+        />
       </div>
     );
   };
@@ -380,7 +378,7 @@ const PVESettings = (props: IProps) => {
         {getRecordRaidSwitch()}
         {getMinEncounterDurationField()}
         {getRaidOverrunField()}
-        {getMinRaidDifficultySelect()}
+        {getPlayerName()}
       </div>
 
       <div className="flex flex-row gap-x-6">

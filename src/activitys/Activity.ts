@@ -32,6 +32,8 @@ export default abstract class Activity {
 
   protected cfg: IConfigService;
 
+  protected _youFound: boolean;
+
   constructor(
     startDate: Date,
     category: VideoCategory,
@@ -45,10 +47,19 @@ export default abstract class Activity {
     this._deaths = [];
     this._flavour = flavour;
     this.cfg = cfg;
+    this._youFound = false;
   }
 
   abstract getMetadata(): Metadata;
   abstract getFileName(): string;
+
+  get youFound() {
+    return this._youFound;
+  }
+
+  set youFound(value) {
+    this._youFound = value;
+  }
 
   get zoneID() {
     return this._zoneID;
@@ -158,8 +169,29 @@ export default abstract class Activity {
     this.result = result;
   }
 
+  getPlayerCount() {
+    return this.combatantMap.size;
+  }
+
   getCombatant(GUID: string) {
     return this.combatantMap.get(GUID);
+  }
+
+  updateYou(job: string) {
+    //Pour pas avoir à itérer dans la map à chaque log
+    if (this.youFound) {
+      return;
+    }
+    let combatant = this.getYou();
+    if (combatant) {
+      combatant.jobName = job;
+      this.playerGUID = combatant.GUID;
+    }
+
+  }
+
+  getYou() {
+    return [...this.combatantMap.values()].find(c => c.jobName == undefined);
   }
 
   addCombatant(combatant: Combatant) {

@@ -114,7 +114,7 @@ const setupTray = () => {
     },
   ]);
 
-  tray.setToolTip('Warcraft Recorder');
+  tray.setToolTip('FFXIV Recorder');
   tray.setContextMenu(contextMenu);
 
   tray.on('double-click', () => {
@@ -140,7 +140,7 @@ const createWindow = async () => {
     width: 1980 * 0.8,
     icon: getAssetPath('./icon/small-icon.png'),
     frame: false,
-    title: `Warcraft Recorder v${appVersion}`,
+    title: `FFXIV Recorder v${appVersion}`,
     webPreferences: {
       nodeIntegration: true,
       webSecurity: false,
@@ -162,7 +162,7 @@ const createWindow = async () => {
     // This shows the correct version on a release build, not during development.
     mainWindow.webContents.send(
       'updateVersionDisplay',
-      `Warcraft Recorder v${appVersion}`,
+      `FFXIV Recorder v${appVersion}`,
     );
 
     assert(manager);
@@ -292,7 +292,7 @@ ipcMain.handle('selectFile', async () => {
 });
 
 /**
- * Listener to open the folder containing the Warcraft Recorder logs.
+ * Listener to open the folder containing the FFXIV Recorder logs.
  */
 ipcMain.on('logPath', (_event, args) => {
   if (args[0] === 'open') {

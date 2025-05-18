@@ -1,20 +1,21 @@
 {
-  "name": "WarcraftRecorder",
-  "description": "A World of Warcraft screen recorder",
+  "name": "FFXIVRecorder",
+  "description": "A Final Fantasy XIV screen recorder",
   "keywords": [
-    "world",
-    "of",
-    "warcraft",
+    "final",
+    "fantasy",
+    "14",
+    "ffxiv",
     "screen",
     "recorder"
   ],
   "homepage": "https://www.warcraftrecorder.com/",
   "bugs": {
-    "url": "https://github.com/aza547/wow-recorder/issues"
+    "url": "https://github.com/NathanScutari/ffxiv-recorder/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aza547/wow-recorder.git"
+    "url": "git+https://github.com/NathanScutari/ffxiv-recorder.git"
   },
   "license": "Creative Commons Attribution-NonCommercial",
   "author": {
@@ -63,8 +64,8 @@
     "logLevel": "quiet"
   },
   "build": {
-    "productName": "WarcraftRecorder",
-    "appId": "org.WarcraftRecorder",
+    "productName": "FFXIVRecorder",
+    "appId": "org.FFXIVRecorder",
     "asar": true,
     "asarUnpack": "**\\**",
     "files": [
@@ -79,9 +80,9 @@
     },
     "win": {
       "signtoolOptions": {
-        "certificateSubjectName": "Warcraft Recorder Limited"
+        "certificateSubjectName": "FFXIV Recorder Limited"
       },
-      "artifactName": "WarcraftRecorder-Setup-${version}.exe",
+      "artifactName": "FFXIVRecorder-Setup-${version}.exe",
       "target": [
         "nsis"
       ]
