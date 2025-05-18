@@ -3,9 +3,7 @@ import { EventEmitter } from 'stream';
 import VideoProcessQueue from '../main/VideoProcessQueue';
 import Poller from '../utils/Poller';
 import Combatant from '../main/Combatant';
-import CombatLogWatcher from './CombatLogWatcher';
 import ConfigService from '../config/ConfigService';
-import { instanceDifficulty } from '../main/constants';
 import Recorder from '../main/Recorder';
 import { Flavour, PlayerDeathType, VideoQueueItem } from '../main/types';
 import Activity from '../activitys/Activity';
@@ -22,6 +20,7 @@ import LogLine from './LogLine';
 import { VideoCategory } from '../types/VideoCategory';
 import { allowRecordCategory, getFlavourConfig } from '../utils/configUtils';
 import { CombatDataEvent, CombatantData } from './CombatData';
+import { LogLineFFXIV } from './LogLineFFXIV';
 
 /**
  * Generic LogHandler class. Everything in this class must be valid for both
@@ -31,8 +30,6 @@ import { CombatDataEvent, CombatantData } from './CombatData';
  * subclass; i.e. RetailLogHandler, ClassicLogHandler or EraLogHandler.
  */
 export default abstract class LogHandler extends EventEmitter {
-  public combatLogWatcher: CombatLogWatcher;
-
   public activity?: Activity;
 
   public overrunning = false;
@@ -60,7 +57,6 @@ export default abstract class LogHandler extends EventEmitter {
     mainWindow: BrowserWindow,
     recorder: Recorder,
     videoProcessQueue: VideoProcessQueue,
-    logPath: string,
     dataTimeout: number,
   ) {
     super();
@@ -68,19 +64,7 @@ export default abstract class LogHandler extends EventEmitter {
     this.mainWindow = mainWindow;
      this.recorder = recorder;
 
-    this.combatLogWatcher = new CombatLogWatcher(logPath, dataTimeout);
-    this.combatLogWatcher.watch();
-
-    this.combatLogWatcher.on('timeout', (ms: number) => {
-      this.dataTimeout(ms);
-    });
-
     this.videoProcessQueue = videoProcessQueue;
-  }
-
-  destroy() {
-    this.combatLogWatcher.unwatch();
-    this.combatLogWatcher.removeAllListeners();
   }
 
   protected async handleEncounterStartLine(
@@ -92,7 +76,7 @@ export default abstract class LogHandler extends EventEmitter {
     let encounterName;
 
     startDate = new Date(Date.now());
-    encounterName = event.Encounter.title;
+    encounterName = event.Encounter.CurrentZoneName;
 
     const activity = new RaidEncounter(
       startDate,
@@ -134,44 +118,25 @@ export default abstract class LogHandler extends EventEmitter {
     await this.endActivity();
   }
 
-  protected handleUnitDiedLine(line: LogLine): void {
+  protected handleUnitDiedLine(event: LogLineFFXIV): void {
     if (!this.activity) {
       return;
     }
 
-    const unitFlags = parseInt(line.arg(7), 16);
+    const playerName = event.line[3];
 
-    if (!isUnitPlayer(unitFlags)) {
-      // Deliberatly not logging here as not interesting and frequent.
-      return;
-    }
-
-    const isUnitUnconsciousAtDeath = Boolean(parseInt(line.arg(9), 10));
-
-    if (isUnitUnconsciousAtDeath) {
-      // Deliberatly not logging here as not interesting and frequent.
-      return;
-    }
-
-    const playerName = line.arg(6);
-    const playerGUID = line.arg(5);
-
-    // Add player death and subtract 2 seconds from the time of death to allow the
-    // user to view a bit of the video before the death and not at the actual millisecond
-    // it happens.
-    const deathDate = (line.date().getTime() - 2) / 1000;
+    const deathDate =
+      new Date(new Date(Date.now()).getTime() - 2000);
     const activityStartDate = this.activity.startDate.getTime() / 1000;
-    let relativeTime = deathDate - activityStartDate;
-
-    if (relativeTime < 0) {
-      console.error('[LogHandler] Tried to set timestamp to', relativeTime);
-      relativeTime = 0;
-    }
+    let relativeTime = (deathDate.getTime() / 1000) - activityStartDate;
+    if (relativeTime < 0) relativeTime = 0;
 
     const playerDeath: PlayerDeathType = {
+      specId: 0,
+      friendly: true,
       name: playerName,
-      date: line.date(),
-      timestamp: relativeTime,
+      date: deathDate,
+      timestamp: relativeTime
     };
 
     this.activity.addDeath(playerDeath);

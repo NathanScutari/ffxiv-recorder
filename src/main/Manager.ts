@@ -682,11 +682,14 @@ export default class Manager {
     // }
 
     if (config.recordFFXIV) {
+      if (this.xivLogHandler) {
+        this.xivLogHandler.dispose();
+      }
+
       this.xivLogHandler = new FfXIVLogHandler(
         this.mainWindow,
         this.recorder,
-        this.videoProcessQueue,
-        config.xivLogPath
+        this.videoProcessQueue
       )
 
       this.xivLogHandler.on('state-change', () => this.refreshStatus());
@@ -886,6 +889,7 @@ export default class Manager {
     const {
       recordFFXIV,
       xivLogPath,
+      playerName,
     } = config;
 
     // if (recordRetail) {
@@ -939,11 +943,8 @@ export default class Manager {
     // }
 
     if (recordFFXIV) {
-      const validPath = typeof xivLogPath === 'string' && xivLogPath.trim().length > 0;
-
-      if (!validPath) {
-        console.error('[Util] Invalid FFXIV log path', xivLogPath);
-        throw new Error(this.getLocaleError(Phrase.InvalidEraLogPath));
+      if (!playerName || playerName.length === 0 || playerName.toUpperCase() === "YOU") {
+        throw new Error(this.getLocaleError(Phrase.ErrorPlayerNameYou));
       }
     }
   };

@@ -27,6 +27,8 @@ interface IProps {
   appState: AppState;
 }
 
+const ipc = window.electron.ipcRenderer;
+
 const PVESettings = (props: IProps) => {
   const { appState } = props;
   const [config, setConfig] = useSettings();
@@ -156,9 +158,9 @@ const PVESettings = (props: IProps) => {
     setConfig((prevState) => {
       let value = event.target.value;
 
-      if (value == "YOU") {
-        value = "";
-      }
+      setConfigValues({playerName: value});
+      ipc.sendMessage('settingsChange', []);
+
       return {
         ...prevState,
         playerName: value,
@@ -379,12 +381,6 @@ const PVESettings = (props: IProps) => {
         {getMinEncounterDurationField()}
         {getRaidOverrunField()}
         {getPlayerName()}
-      </div>
-
-      <div className="flex flex-row gap-x-6">
-        {getRecordDungeonSwitch()}
-        {getMinKeystoneLevelField()}
-        {getDungeonOverrunField()}
       </div>
     </div>
   );

@@ -95,7 +95,9 @@ enum UnitFlags {
 type PlayerDeathType = {
   name: string;
   date: Date;
+  specId: number;
   timestamp: number;
+  friendly: boolean;
 };
 
 /**
@@ -238,7 +240,9 @@ type CloudSignedMetadata = CloudMetadata & {
 type RawCombatant = {
   _GUID?: string;
   _name?: string;
-  _jobName?: string;
+  _teamID?: number;
+  _specID?: number;
+  _realm?: string;
 };
 
 /**
@@ -397,6 +401,7 @@ type ObsAudioConfig = {
 type FlavourConfig = {
   recordFFXIV: boolean;
   xivLogPath: string;
+  playerName: string
 };
 
 type CloudConfig = {

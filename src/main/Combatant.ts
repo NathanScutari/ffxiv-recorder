@@ -6,9 +6,16 @@ import { RawCombatant } from './types';
 export default class Combatant {
   private _GUID: string;
   
+  private _teamID?: number;
+
+  private _specID?: number;
+
   private _jobName?: string;
 
   private _name?: string;
+
+  private _realm?: string;
+
 
   /**
    * Constructs a new Combatant.
@@ -27,7 +34,27 @@ export default class Combatant {
     if (GUID !== undefined) {
       this.name = GUID;
     }
+
+    this._teamID = 0;
+    this._specID = 0;
+    this._realm = "FFXIV";
   }
+
+  get teamID() {
+    return this._teamID;
+  }
+
+  get specID() {
+    return this._specID;
+  }
+
+  get realm() {
+    return this._realm;
+  }
+
+  /**
+   * Gets the team ID.
+
 
   /**
    * Gets the GUID.
@@ -81,8 +108,11 @@ export default class Combatant {
   getRaw(): RawCombatant {
     const rawCombatant: RawCombatant = { _GUID: this.GUID };
 
-    if (this.jobName !== undefined) rawCombatant._jobName = this.jobName;
+    if (this.teamID !== undefined) rawCombatant._teamID = this.teamID;
+    if (this.specID !== undefined) rawCombatant._specID = this.specID;
     if (this.name !== undefined) rawCombatant._name = this.name;
+    if (this.realm !== undefined) rawCombatant._realm = this.realm;
+
 
     return rawCombatant;
   }

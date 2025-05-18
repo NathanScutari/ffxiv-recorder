@@ -1,4 +1,6 @@
 !(function () {
+  let init = false;
+
   let e = /[\?&]OVERLAY_WS=([^&]+)/.exec(location.href),
     n = null,
     r = [],
@@ -108,6 +110,18 @@
   // Connexion à FFXIV Recorder en tant que proxy WebSocket
   let recorderSocket = null;
 
+  function sendLogLine(event) {
+    if (recorderSocket && recorderSocket.readyState === WebSocket.OPEN) {
+      recorderSocket.send(JSON.stringify(event));
+    }
+  }
+
+  function sendCombatData(event) {
+    if (recorderSocket && recorderSocket.readyState === WebSocket.OPEN) {
+      recorderSocket.send(JSON.stringify(event));
+    }
+  }
+
   function connectToRecorder() {
     recorderSocket = new WebSocket('ws://localhost:13337');
 
@@ -115,21 +129,19 @@
       console.log('Connected to FFXIV Recorder');
 
       // Transfert des événements OverlayPlugin vers FFXIV Recorder
-      window.addOverlayListener('LogLine', (event) => {
-        if (recorderSocket && recorderSocket.readyState === WebSocket.OPEN) {
-          recorderSocket.send(JSON.stringify(event));
-        }
-      });
+      window.removeEventListener('LogLine', sendLogLine);
+      window.addOverlayListener('LogLine', sendLogLine);
 
-      window.addOverlayListener('CombatData', (event) => {
-        if (recorderSocket && recorderSocket.readyState === WebSocket.OPEN) {
-          recorderSocket.send(JSON.stringify(event));
-        }
-      });
+      window.removeEventListener('CombatData', sendCombatData);
+      window.addOverlayListener('CombatData', sendCombatData);
 
       console.log("Démarrage de l'écoute des logs ACT");
 
-      window.startOverlayEvents();
+      if (!init) {
+        console.log("Init");
+        window.startOverlayEvents();
+        init = true;
+      }
     };
 
     recorderSocket.onclose = () => {

@@ -308,6 +308,7 @@ enum Phrase {
   Pvp,
   ErrorAccountEmpty,
   ErrorPasswordEmpty,
+  ErrorPlayerNameYou,
   ErrorGuildEmpty,
   ErrorUserNotAuthorizedPlayback,
   ErrorUserNotAuthorizedUpload,

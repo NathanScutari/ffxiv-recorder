@@ -37,15 +37,13 @@ export default class FfXIVLogHandler extends LogHandler {
 
   private isInCombat: boolean;
   private playerName: string;
-  private combatants: Map<string, CombatantData> = new Map();
 
   constructor(
     mainWindow: BrowserWindow,
     recorder: Recorder,
-    videoProcessQueue: VideoProcessQueue,
-    logPath: string,
+    videoProcessQueue: VideoProcessQueue
   ) {
-    super(mainWindow, recorder, videoProcessQueue, logPath, 10);
+    super(mainWindow, recorder, videoProcessQueue, 10);
     this.isInCombat = false;
 
     this.xivWSServer = new FFXIVWebSocketServer(13337);
@@ -57,12 +55,16 @@ export default class FfXIVLogHandler extends LogHandler {
     });
 
     this.xivWSServer.addOverlayListener('CombatData', (event) => {
-        if (this.isCombatDataEvent(event)) {
-          this.handleCombatData(event);
-        }
+      if (this.isCombatDataEvent(event)) {
+        this.handleCombatData(event);
+      }
     });
 
     this.playerName = this.cfg.get<string>('playerName');
+  }
+
+  public dispose() {
+    this.xivWSServer.dispose();
   }
 
   private isLogLine(event: any): event is LogLineFFXIV {
@@ -84,7 +86,10 @@ export default class FfXIVLogHandler extends LogHandler {
   }
 
   private isRaid(event: CombatDataEvent): boolean {
-    return Object.values(event.Combatant).filter((c: any) => c.Job !== undefined).length === 1;
+    return (
+      Object.values(event.Combatant).filter((c: any) => c.Job !== undefined)
+        .length === 8
+    );
   }
 
   private isPlayer(combatant: CombatantData): boolean {
@@ -93,12 +98,11 @@ export default class FfXIVLogHandler extends LogHandler {
 
   private handleCombatData(event: CombatDataEvent) {
     if (!this.isInCombat) {
-      if (event.isActive === "true" && this.isRaid(event)) {
+      if (event.isActive === 'true' && this.isRaid(event)) {
         //Un combat de raid a démarré
         this.playerName = this.cfg.get<string>('playerName');
         this.isInCombat = true;
         super.handleEncounterStartLine(event, Flavour.FFXIV);
-        this.activity?.overrun = 
       }
 
       //Correspond à des event hors combat
@@ -106,20 +110,22 @@ export default class FfXIVLogHandler extends LogHandler {
     }
 
     if (!this.activity) {
-      console.error("No activity in progress while isInCombat is true");
+      console.error('No activity in progress while isInCombat is true');
       this.isInCombat = false;
       this.forceEndActivity();
       return;
     }
 
     if (this.activity.getPlayerCount() > 2) {
-      console.info("Stopped recording because player count exceeded maximum allowed.");
+      console.info(
+        'Stopped recording because player count exceeded maximum allowed.',
+      );
       this.isInCombat = false;
       this.forceEndActivity();
     }
 
     //fin de combat
-    if (event.isActive === "false") {
+    if (event.isActive === 'false') {
       this.isInCombat = false;
       this.handleEncounterEndLine(event);
     }
@@ -128,7 +134,7 @@ export default class FfXIVLogHandler extends LogHandler {
     if (this.isInCombat) {
       for (let combatant of Object.values(event.Combatant)) {
         //cas particulier pour YOU, on essaye de le mettre à jour pour récupérer son job
-        if (combatant.name === "YOU") {
+        if (combatant.name === 'YOU') {
           if (combatant.Job) {
             this.activity.playerGUID = this.playerName;
           }
@@ -152,17 +158,15 @@ export default class FfXIVLogHandler extends LogHandler {
 
   private handleLogLine(event: LogLineFFXIV): void {
     const opCode = event.line[0];
-    // switch (opCode) {
-    //   case '0005': // combat end ?
-    //     this.handleEncounterEndLine(line);
-    //     break;
-    //   case '0038': // death ?
-    //     this.handleUnitDiedLine(line);
-    //     break;
-    //   default:
-    //     // console.debug('Unhandled opcode', opCode);
-    //     break;
-    // }
+
+    switch (opCode) {
+      case '25': // death
+        this.handleUnitDiedLine(event);
+        break;
+      default:
+        // console.debug('Unhandled opcode', opCode);
+        break;
+    }
   }
 
   protected async handleEncounterStartLine(
@@ -187,8 +191,19 @@ export default class FfXIVLogHandler extends LogHandler {
     super.handleEncounterEndLine(event);
   }
 
-  protected handleUnitDiedLine(line: LogLineFFXIV): void {
-    // if (!this.activity) return;
+  protected handleUnitDiedLine(event: LogLineFFXIV): void {
+    if (!this.activity) return;
+
+    const playerName = event.line[3];
+    const player = this.activity.getCombatant(playerName);
+
+    console.log(event.rawLine);
+
+    if (!player) {
+      return;
+    }
+
+    super.handleUnitDiedLine(event);
     // const playerName = line.arg(2); // à confirmer
     // const playerGUID = line.arg(1);
     // const unitFlags = 0xf000; // à définir selon ton format

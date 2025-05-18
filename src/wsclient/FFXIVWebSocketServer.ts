@@ -42,6 +42,10 @@ export class FFXIVWebSocketServer {
     });
   }
 
+  public dispose() {
+    this.wss.close();
+  }
+
   addOverlayListener(eventType: string, callback: EventCallback) {
     if (!this.listeners[eventType]) {
       this.listeners[eventType] = [];
