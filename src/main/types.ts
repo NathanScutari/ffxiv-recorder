@@ -391,6 +391,7 @@ type ObsAudioConfig = {
   obsForceMono: boolean;
   speakerVolume: number;
   micVolume: number;
+  processVolume: number;
   pushToTalk: boolean;
   pushToTalkKey: number;
   pushToTalkMouseButton: number;
@@ -552,6 +553,20 @@ export declare type TObsFormData = (
   | IObsListInput<TObsValue>
 )[];
 
+type ObsSourceCallbackInfo = {
+  name: string;
+  width: number;
+  height: number;
+  flags: number;
+};
+
+type ObsVolmeterCallbackInfo = {
+  sourceName: string;
+  magnitude: number[];
+  peak: number[];
+  inputPeak: number[];
+};
+
 export {
   RecStatus,
   SaveStatus,
@@ -605,4 +620,6 @@ export {
   CreateMultiPartUploadResponseBody,
   CompleteMultiPartUploadRequestBody,
   StorageFilter,
+  ObsSourceCallbackInfo,
+  ObsVolmeterCallbackInfo,
 };

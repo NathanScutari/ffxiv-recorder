@@ -24,7 +24,9 @@ export type Channels =
   | 'writeClipboard'
   | 'getShareableLink'
   | 'refreshFrontend'
-  | 'doAppUpdate';
+  | 'doAppUpdate'
+  | 'volmeter'
+  | 'attachAudioSources';
 
 contextBridge.exposeInMainWorld('electron', {
   ipcRenderer: {
