@@ -28,31 +28,41 @@ export default class RaidEncounter extends Activity {
 
   constructor(
     startDate: Date,
-    encounterID: number,
     encounterName: string,
-    difficultyID: number,
     flavour: Flavour,
     cfg: IConfigService,
   ) {
     super(startDate, VideoCategory.Raids, flavour, cfg);
-    this._difficultyID = difficultyID;
-    this._encounterID = encounterID;
+    this._difficultyID = 16;
+    this._encounterID = 0;
     this._encounterName = encounterName;
     this.overrun = 1; // Even for wipes it's nice to have some overrun.
-  }
-
-  get difficultyID() {
-    return this._difficultyID;
-  }
-
-  get encounterID() {
-    return this._encounterID;
   }
 
   get encounterName() {
     return this._encounterName;
   }
 
+  get resultInfo() {
+    if (this.result === undefined) {
+      throw new Error('[RaidEncounter] Tried to get result info but no result');
+    }
+
+    const language = this.cfg.get<string>('language') as Language;
+
+    if (this.result) {
+      return getLocalePhrase(language, Phrase.Kill);
+    }
+
+    return getLocalePhrase(language, Phrase.Wipe);
+  }
+
+  get encounterID() {
+    return this._encounterID;
+  }
+
+
+  
   get zoneID(): number {
     if (!this.encounterID) {
       console.warn("[RaidEncounter] EncounterID not set, can't get zone ID");
@@ -95,32 +105,12 @@ export default class RaidEncounter extends Activity {
     return raid;
   }
 
-  get resultInfo() {
-    if (this.result === undefined) {
-      throw new Error('[RaidEncounter] Tried to get result info but no result');
-    }
 
-    const language = this.cfg.get<string>('language') as Language;
-
-    if (this.result) {
-      return getLocalePhrase(language, Phrase.Kill);
-    }
-
-    return getLocalePhrase(language, Phrase.Wipe);
+  get difficultyID() {
+    return this._difficultyID;
   }
 
   get difficulty() {
-    const isRecognisedDifficulty = Object.prototype.hasOwnProperty.call(
-      instanceDifficulty,
-      this.difficultyID,
-    );
-
-    if (!isRecognisedDifficulty) {
-      throw new Error(
-        `[RaidEncounters] Unknown difficulty ID: ${this.difficultyID}`,
-      );
-    }
-
     return instanceDifficulty[this.difficultyID];
   }
 
@@ -134,8 +124,8 @@ export default class RaidEncounter extends Activity {
     return {
       category: VideoCategory.Raids,
       zoneID: this.zoneID,
-      zoneName: this.raid.shortName,
-      flavour: this.flavour,
+      zoneName: this.encounterName,
+      flavour: Flavour.Retail,
       encounterID: this.encounterID,
       encounterName: this.encounterName,
       difficultyID: this.difficultyID,
@@ -153,11 +143,7 @@ export default class RaidEncounter extends Activity {
   }
 
   getFileName(): string {
-    let fileName = `${this.encounterName} [${this.difficulty.difficulty}] (${this.resultInfo})`;
-
-    if (this.raid.name !== 'Unknown Raid') {
-      fileName = `${this.raid.name}, ${fileName}`;
-    }
+    let fileName = `${this.encounterName} (${this.resultInfo})`;
 
     try {
       if (this.player.name !== undefined) {

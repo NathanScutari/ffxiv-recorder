@@ -32,26 +32,13 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
     }
 
     setConfigValues({
-      recordRetail: config.recordRetail,
-      retailLogPath: config.retailLogPath,
-      recordClassic: config.recordClassic,
-      classicLogPath: config.classicLogPath,
-      recordEra: config.recordEra,
-      eraLogPath: config.eraLogPath,
-      recordRetailPtr: config.recordRetailPtr,
-      retailPtrLogPath: config.retailPtrLogPath,
+      recordFFXIV: config.recordFFXIV
     });
 
     ipc.sendMessage('settingsChange', []);
   }, [
-    config.recordRetail,
-    config.recordClassic,
-    config.retailLogPath,
-    config.classicLogPath,
-    config.recordEra,
-    config.eraLogPath,
-    config.recordRetailPtr,
-    config.retailPtrLogPath,
+    config.recordFFXIV,
+    config.xivLogPath,
   ]);
 
   const isComponentDisabled = () => {
@@ -83,25 +70,16 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
     />
   );
 
-  const setRecordRetail = (checked: boolean) => {
+  const setRecordFFXIV = (checked: boolean) => {
     setConfig((prevState) => {
       return {
         ...prevState,
-        recordRetail: checked,
+        recordFFXIV: checked,
       };
     });
   };
 
-  const setRecordClassic = (checked: boolean) => {
-    setConfig((prevState) => {
-      return {
-        ...prevState,
-        recordClassic: checked,
-      };
-    });
-  };
-
-  const setRetailLogPath = async () => {
+  const setXIVLogPath = async () => {
     if (isComponentDisabled()) {
       return;
     }
@@ -115,264 +93,12 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
     setConfig((prevState) => {
       return {
         ...prevState,
-        retailLogPath: newPath,
+        xivLogPath: newPath,
       };
     });
   };
 
-  const getRetailSettings = () => {
-    if (isComponentDisabled()) {
-      return <></>;
-    }
-
-    return (
-      <div className="flex flex-row gap-x-6">
-        <div className="flex flex-col w-[140px]">
-          <Label htmlFor="recordRetail" className="flex items-center">
-            {getLocalePhrase(appState.language, Phrase.RecordRetailLabel)}
-            <Tooltip
-              content={getLocalePhrase(
-                appState.language,
-                configSchema.recordRetail.description,
-              )}
-              side="top"
-            >
-              <Info size={20} className="inline-flex ml-2" />
-            </Tooltip>
-          </Label>
-          <div className="flex h-10 items-center">
-            {getSwitch('recordRetail', setRecordRetail)}
-          </div>
-        </div>
-        {config.recordRetail && (
-          <div className="flex flex-col w-1/2">
-            <Label htmlFor="retailLogPath" className="flex items-center">
-              {getLocalePhrase(appState.language, Phrase.RetailLogPathLabel)}
-              <Tooltip
-                content={getLocalePhrase(
-                  appState.language,
-                  configSchema.retailLogPath.description,
-                )}
-                side="top"
-              >
-                <Info size={20} className="inline-flex ml-2" />
-              </Tooltip>
-            </Label>
-            <Input
-              value={config.retailLogPath}
-              onClick={setRetailLogPath}
-              readOnly
-              required
-            />
-            {config.retailLogPath === '' && (
-              <span className="text-error text-sm">
-                {getLocalePhrase(
-                  appState.language,
-                  Phrase.InvalidRetailLogPathText,
-                )}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const setClassicLogPath = async () => {
-    if (isComponentDisabled()) {
-      return;
-    }
-
-    const newPath = await pathSelect();
-
-    if (newPath === '') {
-      return;
-    }
-
-    setConfig((prevState) => {
-      return {
-        ...prevState,
-        classicLogPath: newPath,
-      };
-    });
-  };
-
-  const getClassicSettings = () => {
-    if (isComponentDisabled()) {
-      return <></>;
-    }
-
-    return (
-      <div className="flex flex-row gap-x-6">
-        <div className="flex flex-col w-[140px]">
-          <Label htmlFor="recordClassic" className="flex items-center">
-            {getLocalePhrase(appState.language, Phrase.RecordClassicLabel)}
-            <Tooltip
-              content={getLocalePhrase(
-                appState.language,
-                configSchema.recordClassic.description,
-              )}
-              side="top"
-            >
-              <Info size={20} className="inline-flex ml-2" />
-            </Tooltip>
-          </Label>
-          <div className="flex h-10 items-center">
-            {getSwitch('recordClassic', setRecordClassic)}
-          </div>
-        </div>
-        {config.recordClassic && (
-          <div className="flex flex-col w-1/2">
-            <Label htmlFor="classicLogPath" className="flex items-center">
-              {getLocalePhrase(appState.language, Phrase.ClassicLogPathLabel)}
-              <Tooltip
-                content={getLocalePhrase(
-                  appState.language,
-                  configSchema.classicLogPath.description,
-                )}
-                side="top"
-              >
-                <Info size={20} className="inline-flex ml-2" />
-              </Tooltip>
-            </Label>
-            <Input
-              value={config.classicLogPath}
-              onClick={setClassicLogPath}
-              readOnly
-              required
-            />
-            {config.classicLogPath === '' && (
-              <span className="text-error text-sm">
-                {getLocalePhrase(
-                  appState.language,
-                  Phrase.InvalidClassicLogPathText,
-                )}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const setRecordEra = (checked: boolean) => {
-    setConfig((prevState) => {
-      return {
-        ...prevState,
-        recordEra: checked,
-      };
-    });
-  };
-
-  const setEraLogPath = async () => {
-    if (isComponentDisabled()) {
-      return;
-    }
-
-    const newPath = await pathSelect();
-
-    if (newPath === '') {
-      return;
-    }
-
-    setConfig((prevState) => {
-      return {
-        ...prevState,
-        eraLogPath: newPath,
-      };
-    });
-  };
-
-  const getEraSettings = () => {
-    if (isComponentDisabled()) {
-      return <></>;
-    }
-
-    return (
-      <div className="flex flex-row gap-x-6">
-        <div className="flex flex-col w-[140px]">
-          <Label htmlFor="recordEra" className="flex items-center">
-            {getLocalePhrase(appState.language, Phrase.RecordClassicEraLabel)}
-            <Tooltip
-              content={getLocalePhrase(
-                appState.language,
-                configSchema.recordEra.description,
-              )}
-              side="top"
-            >
-              <Info size={20} className="inline-flex ml-2" />
-            </Tooltip>
-          </Label>
-          <div className="flex h-10 items-center">
-            {getSwitch('recordEra', setRecordEra)}
-          </div>
-        </div>
-        {config.recordEra && (
-          <div className="flex flex-col w-1/2">
-            <Label htmlFor="eraLogPath" className="flex items-center">
-              {getLocalePhrase(
-                appState.language,
-                Phrase.ClassicEraLogPathLabel,
-              )}
-              <Tooltip
-                content={getLocalePhrase(
-                  appState.language,
-                  configSchema.eraLogPath.description,
-                )}
-                side="top"
-              >
-                <Info size={20} className="inline-flex ml-2" />
-              </Tooltip>
-            </Label>
-            <Input
-              value={config.eraLogPath}
-              onClick={setEraLogPath}
-              readOnly
-              required
-            />
-            {config.eraLogPath === '' && (
-              <span className="text-error text-xs font-semibold mt-1">
-                {getLocalePhrase(
-                  appState.language,
-                  Phrase.InvalidClassicEraLogPathText,
-                )}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const setRecordRetailPtr = (checked: boolean) => {
-    setConfig((prevState) => {
-      return {
-        ...prevState,
-        recordRetailPtr: checked,
-      };
-    });
-  };
-
-  const setRetailPtrLogPath = async () => {
-    if (isComponentDisabled()) {
-      return;
-    }
-
-    const newPath = await pathSelect();
-
-    if (newPath === '') {
-      return;
-    }
-
-    setConfig((prevState) => {
-      return {
-        ...prevState,
-        retailPtrLogPath: newPath,
-      };
-    });
-  };
-
-  const getRetailPtrSettings = () => {
+  const getXIVSettings = () => {
     if (isComponentDisabled()) {
       return <></>;
     }
@@ -381,11 +107,11 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
       <div className="flex flex-row gap-x-6">
         <div className="flex flex-col w-[140px]">
           <Label htmlFor="recordRetailPtr" className="flex items-center">
-            {getLocalePhrase(appState.language, Phrase.RecordRetailPtrLabel)}
+            {getLocalePhrase(appState.language, Phrase.RecordFFXIVLabel)}
             <Tooltip
               content={getLocalePhrase(
                 appState.language,
-                configSchema.recordRetailPtr.description,
+                configSchema.recordFFXIV.description,
               )}
               side="top"
             >
@@ -393,39 +119,9 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
             </Tooltip>
           </Label>
           <div className="flex h-10 items-center">
-            {getSwitch('recordRetailPtr', setRecordRetailPtr)}
+            {getSwitch('recordFFXIV', setRecordFFXIV)}
           </div>
         </div>
-        {config.recordRetailPtr && (
-          <div className="flex flex-col w-1/2">
-            <Label htmlFor="retailPtrLogPath" className="flex items-center">
-              {getLocalePhrase(appState.language, Phrase.RetailPtrLogPathLabel)}
-              <Tooltip
-                content={getLocalePhrase(
-                  appState.language,
-                  configSchema.retailPtrLogPath.description,
-                )}
-                side="top"
-              >
-                <Info size={20} className="inline-flex ml-2" />
-              </Tooltip>
-            </Label>
-            <Input
-              value={config.retailPtrLogPath}
-              onClick={setRetailPtrLogPath}
-              readOnly
-              required
-            />
-            {config.retailPtrLogPath === '' && (
-              <span className="text-error text-xs font-semibold mt-1">
-                {getLocalePhrase(
-                  appState.language,
-                  Phrase.InvalidRetailPtrLogPathText,
-                )}
-              </span>
-            )}
-          </div>
-        )}
       </div>
     );
   };
@@ -433,10 +129,7 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
   return (
     <div className="flex flex-col gap-y-8">
       {getDisabledText()}
-      {getRetailSettings()}
-      {getClassicSettings()}
-      {getEraSettings()}
-      {getRetailPtrSettings()}
+      {getXIVSettings()}
     </div>
   );
 };

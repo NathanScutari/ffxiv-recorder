@@ -5,14 +5,17 @@ import { RawCombatant } from './types';
  */
 export default class Combatant {
   private _GUID: string;
-
+  
   private _teamID?: number;
 
   private _specID?: number;
 
+  private _jobName?: string;
+
   private _name?: string;
 
   private _realm?: string;
+
 
   /**
    * Constructs a new Combatant.
@@ -21,17 +24,37 @@ export default class Combatant {
    * @param teamID the team the combatant belongs to.
    * @param specID the specID of the combatant
    */
-  constructor(GUID: string, teamID?: number, specID?: number) {
+  constructor(GUID: string, jobName?: string) {
     this._GUID = GUID;
 
-    if (teamID !== undefined) {
-      this._teamID = teamID;
+    if (jobName !== undefined) {
+      this._jobName = jobName;
     }
 
-    if (specID !== undefined) {
-      this._specID = specID;
+    if (GUID !== undefined) {
+      this.name = GUID;
     }
+
+    this._teamID = 0;
+    this._specID = 0;
+    this._realm = "FFXIV";
   }
+
+  get teamID() {
+    return this._teamID;
+  }
+
+  get specID() {
+    return this._specID;
+  }
+
+  get realm() {
+    return this._realm;
+  }
+
+  /**
+   * Gets the team ID.
+
 
   /**
    * Gets the GUID.
@@ -48,36 +71,21 @@ export default class Combatant {
   }
 
   /**
-   * Gets the team ID.
+   * Gets the job name (eg: Vpr)
    */
-  get teamID() {
-    return this._teamID;
-  }
-
-  /**
-   * Sets the teamID.
-   */
-  set teamID(value) {
-    this._teamID = value;
-  }
-
-  /**
-   * Gets the team ID.
-   */
-  get specID() {
-    return this._specID;
+  get jobName() {
+    return this._jobName;
   }
 
   /**
    * Sets the specID.
    */
-  set specID(value) {
-    this._specID = value;
+  set jobName(value) {
+    this._jobName = value;
   }
 
   /**
    * Gets the name.
-   * @apinote Name is in Name-Realm format
    */
   get name() {
     return this._name;
@@ -85,35 +93,16 @@ export default class Combatant {
 
   /**
    * Sets the name.
-   * @apinote Name is in Name-Realm format
    */
   set name(value) {
     this._name = value;
   }
 
-  /**
-   * Gets the name.
-   * @apinote Name is in Name-Realm format
-   */
-  get realm() {
-    return this._realm;
-  }
-
-  /**
-   * Sets the name.
-   * @apinote Name is in Name-Realm format
-   */
-  set realm(value) {
-    this._realm = value;
-  }
-
   isFullyDefined() {
-    const hasGUID = this.teamID !== undefined;
+    const hasGUID = this.name !== undefined;
     const hasName = this.name !== undefined;
-    const hasRealm = this.realm !== undefined;
-    const hasSpecID = this.specID !== undefined;
-    const hasTeamID = this.teamID !== undefined;
-    return hasGUID && hasName && hasRealm && hasSpecID && hasTeamID;
+    const hasJob = this.jobName !== undefined;
+    return hasGUID && hasName && hasJob;
   }
 
   getRaw(): RawCombatant {
@@ -123,6 +112,7 @@ export default class Combatant {
     if (this.specID !== undefined) rawCombatant._specID = this.specID;
     if (this.name !== undefined) rawCombatant._name = this.name;
     if (this.realm !== undefined) rawCombatant._realm = this.realm;
+
 
     return rawCombatant;
   }

@@ -185,14 +185,8 @@ const getObsAudioConfig = (cfg: ConfigService): ObsAudioConfig => {
 
 const getFlavourConfig = (cfg: ConfigService): FlavourConfig => {
   return {
-    recordClassic: cfg.get<boolean>('recordClassic'),
-    classicLogPath: cfg.get<string>('classicLogPath'),
-    recordRetail: cfg.get<boolean>('recordRetail'),
-    recordRetailPtr: cfg.get<boolean>('recordRetailPtr'),
-    retailLogPath: cfg.get<string>('retailLogPath'),
-    recordEra: cfg.get<boolean>('recordEra'),
-    eraLogPath: cfg.get<string>('eraLogPath'),
-    retailPtrLogPath: cfg.get<string>('retailPtrLogPath'),
+    recordFFXIV: cfg.get<boolean>('recordFFXIV'),
+    playerName: cfg.get<string>('playerName'),
   };
 };
 

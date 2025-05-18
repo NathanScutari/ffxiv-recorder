@@ -6,7 +6,6 @@ import { uIOhook } from 'uiohook-napi';
 import assert from 'assert';
 import { getLocalePhrase, Language, Phrase } from 'localisation/translations';
 import AuthError from '../utils/AuthError';
-import EraLogHandler from '../parsing/EraLogHandler';
 import {
   addCrashToUI,
   buildClipMetadata,
@@ -30,8 +29,8 @@ import {
 } from './util';
 import { VideoCategory } from '../types/VideoCategory';
 import Poller from '../utils/Poller';
-import ClassicLogHandler from '../parsing/ClassicLogHandler';
 import RetailLogHandler from '../parsing/RetailLogHandler';
+import FfXIVLogHandler from 'parsing/FFXIVLogHandler';
 import Recorder from './Recorder';
 import ConfigService from '../config/ConfigService';
 import {
@@ -70,6 +69,7 @@ import CloudClient from '../storage/CloudClient';
 import DiskSizeMonitor from '../storage/DiskSizeMonitor';
 import RetryableConfigError from '../utils/RetryableConfigError';
 import { TAffiliation } from 'types/api';
+import { FFXIVWebSocketServer } from 'wsclient/FFXIVWebSocketServer';
 
 /**
  * The manager class is responsible for orchestrating all the functional
@@ -109,9 +109,7 @@ export default class Manager {
 
   private retailLogHandler: RetailLogHandler | undefined;
 
-  private classicLogHandler: ClassicLogHandler | undefined;
-
-  private eraLogHandler: EraLogHandler | undefined;
+  private xivLogHandler : FfXIVLogHandler | undefined;
 
   private retailPtrLogHandler: RetailLogHandler | undefined;
 
@@ -207,8 +205,8 @@ export default class Manager {
     this.videoProcessQueue = new VideoProcessQueue(this.mainWindow);
 
     this.poller
-      .on('wowProcessStart', () => this.onWowStarted())
-      .on('wowProcessStop', () => this.onWowStopped());
+      .on('xivProcessStart', () => this.onXIVStarted())
+      .on('xivProcessStop', () => this.onXIVStopped());
 
     setInterval(() => this.restartRecorder(), 5 * (1000 * 60));
   }
@@ -251,16 +249,12 @@ export default class Manager {
       await this.retailLogHandler.forceEndActivity();
     }
 
-    if (this.classicLogHandler && this.classicLogHandler.activity) {
-      await this.classicLogHandler.forceEndActivity();
-    }
-
-    if (this.eraLogHandler && this.eraLogHandler.activity) {
-      await this.eraLogHandler.forceEndActivity();
-    }
-
     if (this.retailPtrLogHandler && this.retailPtrLogHandler.activity) {
       await this.retailPtrLogHandler.forceEndActivity();
+    }
+
+    if (this.xivLogHandler && this.xivLogHandler.activity) {
+      await this.xivLogHandler.forceEndActivity();
     }
   }
 
@@ -278,12 +272,6 @@ export default class Manager {
       const parser = retail.combatLogWatcher;
       runRetailRecordingTest(category, parser, endTest);
       return;
-    }
-
-    if (this.classicLogHandler) {
-      console.info('[Manager] Running classic test');
-      const parser = this.classicLogHandler.combatLogWatcher;
-      runClassicRecordingTest(parser, endTest);
     }
   }
 
@@ -401,15 +389,13 @@ export default class Manager {
 
     const inOverrun =
       this.retailLogHandler?.overrunning ||
-      this.classicLogHandler?.overrunning ||
-      this.eraLogHandler?.overrunning ||
-      this.retailPtrLogHandler?.overrunning;
+      this.retailPtrLogHandler?.overrunning ||
+      this.xivLogHandler?.overrunning;
 
     const inActivity =
       this.retailLogHandler?.activity ||
-      this.classicLogHandler?.activity ||
-      this.eraLogHandler?.activity ||
-      this.retailPtrLogHandler?.activity;
+      this.retailPtrLogHandler?.activity ||
+      this.xivLogHandler?.activity;
 
     if (inOverrun) {
       this.refreshRecStatus(RecStatus.Overrunning);
@@ -505,11 +491,11 @@ export default class Manager {
    * of the App if WoW is open, or the user has genuinely opened WoW. Attaches
    * the audio sources and starts the buffer recording.
    */
-  private async onWowStarted() {
-    console.info('[Manager] Detected WoW is running');
+  private async onXIVStarted() {
+    console.info('[Manager] Detected FFXIV is running');
 
     const videoConfig = getObsVideoConfig(this.cfg);
-    this.recorder.configureVideoSources(videoConfig, this.poller.isWowRunning);
+    this.recorder.configureVideoSources(videoConfig, this.poller.isXIVRunning);
 
     const audioConfig = getObsAudioConfig(this.cfg);
     this.recorder.configureAudioSources(audioConfig);
@@ -517,7 +503,7 @@ export default class Manager {
     try {
       await this.recorder.start();
     } catch (error) {
-      console.error('[Manager] OBS failed to record when WoW started', error);
+      console.error('[Manager] OBS failed to record when FFXIV started', error);
     }
   }
 
@@ -526,19 +512,17 @@ export default class Manager {
    * recording that is still ongoing. We detach audio sources here to
    * allow Windows to go to sleep with WCR running.
    */
-  private async onWowStopped() {
+  private async onXIVStopped() {
     console.info(
-      '[Manager] Detected WoW not running, or Windows going inactive',
+      '[Manager] Detected FFXIV not running, or Windows going inactive',
     );
 
     if (this.retailLogHandler && this.retailLogHandler.activity) {
       await this.retailLogHandler.forceEndActivity();
-    } else if (this.classicLogHandler && this.classicLogHandler.activity) {
-      await this.classicLogHandler.forceEndActivity();
-    } else if (this.eraLogHandler && this.eraLogHandler.activity) {
-      await this.eraLogHandler.forceEndActivity();
     } else if (this.retailPtrLogHandler && this.retailPtrLogHandler.activity) {
       await this.retailPtrLogHandler.forceEndActivity();
+    } else if (this.xivLogHandler && this.xivLogHandler.activity) {
+      await this.xivLogHandler.forceEndActivity();
     } else {
       await this.recorder.stop();
     }
@@ -615,14 +599,14 @@ export default class Manager {
    * Configure video settings in OBS. This can all be changed live.
    */
   private configureObsVideo(config: ObsVideoConfig) {
-    this.recorder.configureVideoSources(config, this.poller.isWowRunning);
+    this.recorder.configureVideoSources(config, this.poller.isXIVRunning);
   }
 
   /**
    * Configure audio settings in OBS. This can all be changed live.
    */
   private configureObsAudio(config: ObsAudioConfig) {
-    if (this.poller.isWowRunning) {
+    if (this.poller.isXIVRunning) {
       this.recorder.configureAudioSources(config);
     }
   }
@@ -643,63 +627,72 @@ export default class Manager {
       this.retailLogHandler.destroy();
     }
 
-    if (this.classicLogHandler) {
-      this.classicLogHandler.removeAllListeners();
-      this.classicLogHandler.destroy();
-    }
-
-    if (this.eraLogHandler) {
-      this.eraLogHandler.removeAllListeners();
-      this.eraLogHandler.destroy();
-    }
-
     if (this.retailPtrLogHandler) {
       this.retailPtrLogHandler.removeAllListeners();
       this.retailPtrLogHandler.destroy();
     }
 
-    if (config.recordRetail) {
-      this.retailLogHandler = new RetailLogHandler(
-        this.mainWindow,
-        this.recorder,
-        this.videoProcessQueue,
-        config.retailLogPath,
-      );
-
-      this.retailLogHandler.on('state-change', () => this.refreshStatus());
+    if (this.xivLogHandler) {
+      this.xivLogHandler.removeAllListeners();
+      this.xivLogHandler.dispose();
     }
 
-    if (config.recordClassic) {
-      this.classicLogHandler = new ClassicLogHandler(
+    // if (config.recordRetail) {
+    //   this.retailLogHandler = new RetailLogHandler(
+    //     this.mainWindow,
+    //     this.recorder,
+    //     this.videoProcessQueue,
+    //     config.retailLogPath,
+    //   );
+
+    //   this.retailLogHandler.on('state-change', () => this.refreshStatus());
+    // }
+
+    // if (config.recordClassic) {
+    //   this.classicLogHandler = new ClassicLogHandler(
+    //     this.mainWindow,
+    //     this.recorder,
+    //     this.videoProcessQueue,
+    //     config.classicLogPath,
+    //   );
+
+    //   this.classicLogHandler.on('state-change', () => this.refreshStatus());
+    // }
+
+    // if (config.recordEra) {
+    //   this.eraLogHandler = new EraLogHandler(
+    //     this.mainWindow,
+    //     this.recorder,
+    //     this.videoProcessQueue,
+    //     config.eraLogPath,
+    //   );
+
+    //   this.eraLogHandler.on('state-change', () => this.refreshStatus());
+    // }
+
+    // if (config.recordRetailPtr) {
+    //   this.retailPtrLogHandler = new RetailLogHandler(
+    //     this.mainWindow,
+    //     this.recorder,
+    //     this.videoProcessQueue,
+    //     config.retailPtrLogPath,
+    //   );
+
+    //   this.retailPtrLogHandler.on('state-change', () => this.refreshStatus());
+    // }
+
+    if (config.recordFFXIV) {
+      if (this.xivLogHandler) {
+        this.xivLogHandler.dispose();
+      }
+
+      this.xivLogHandler = new FfXIVLogHandler(
         this.mainWindow,
         this.recorder,
-        this.videoProcessQueue,
-        config.classicLogPath,
-      );
+        this.videoProcessQueue
+      )
 
-      this.classicLogHandler.on('state-change', () => this.refreshStatus());
-    }
-
-    if (config.recordEra) {
-      this.eraLogHandler = new EraLogHandler(
-        this.mainWindow,
-        this.recorder,
-        this.videoProcessQueue,
-        config.eraLogPath,
-      );
-
-      this.eraLogHandler.on('state-change', () => this.refreshStatus());
-    }
-
-    if (config.recordRetailPtr) {
-      this.retailPtrLogHandler = new RetailLogHandler(
-        this.mainWindow,
-        this.recorder,
-        this.videoProcessQueue,
-        config.retailPtrLogPath,
-      );
-
-      this.retailPtrLogHandler.on('state-change', () => this.refreshStatus());
+      this.xivLogHandler.on('state-change', () => this.refreshStatus());
     }
 
     this.poller.reconfigureFlavour(config);
@@ -894,63 +887,64 @@ export default class Manager {
    */
   private validateFlavour = (config: FlavourConfig) => {
     const {
-      recordRetail,
-      retailLogPath,
-      recordRetailPtr,
-      retailPtrLogPath,
-      recordClassic,
-      classicLogPath,
-      recordEra,
-      eraLogPath,
+      recordFFXIV,
+      xivLogPath,
+      playerName,
     } = config;
 
-    if (recordRetail) {
-      const validFlavours = ['wow'];
-      const validPath =
-        validFlavours.includes(getWowFlavour(retailLogPath)) &&
-        path.basename(retailLogPath) === 'Logs';
+    // if (recordRetail) {
+    //   const validFlavours = ['wow'];
+    //   const validPath =
+    //     validFlavours.includes(getWowFlavour(retailLogPath)) &&
+    //     path.basename(retailLogPath) === 'Logs';
 
-      if (!validPath) {
-        console.error('[Util] Invalid retail log path', retailLogPath);
-        throw new Error(this.getLocaleError(Phrase.InvalidRetailLogPath));
-      }
-    }
+    //   if (!validPath) {
+    //     console.error('[Util] Invalid retail log path', retailLogPath);
+    //     throw new Error(this.getLocaleError(Phrase.InvalidRetailLogPath));
+    //   }
+    // }
 
-    if (recordRetailPtr) {
-      const validFlavours = ['wowxptr', 'wow_beta'];
-      const validPath =
-        validFlavours.includes(getWowFlavour(retailPtrLogPath)) &&
-        path.basename(retailPtrLogPath) === 'Logs';
+    // if (recordRetailPtr) {
+    //   const validFlavours = ['wowxptr', 'wow_beta'];
+    //   const validPath =
+    //     validFlavours.includes(getWowFlavour(retailPtrLogPath)) &&
+    //     path.basename(retailPtrLogPath) === 'Logs';
 
-      if (!validPath) {
-        console.error('[Util] Invalid retail PTR log path', retailPtrLogPath);
-        throw new Error(
-          this.getLocaleError(Phrase.InvalidRetailPtrLogPathText),
-        );
-      }
-    }
+    //   if (!validPath) {
+    //     console.error('[Util] Invalid retail PTR log path', retailPtrLogPath);
+    //     throw new Error(
+    //       this.getLocaleError(Phrase.InvalidRetailPtrLogPathText),
+    //     );
+    //   }
+    // }
 
-    if (recordClassic) {
-      const validFlavours = ['wow_classic', 'wow_classic_beta'];
-      const validPath =
-        validFlavours.includes(getWowFlavour(classicLogPath)) &&
-        path.basename(classicLogPath) === 'Logs';
+    // if (recordClassic) {
+    //   const validFlavours = ['wow_classic', 'wow_classic_beta'];
+    //   const validPath =
+    //     validFlavours.includes(getWowFlavour(classicLogPath)) &&
+    //     path.basename(classicLogPath) === 'Logs';
 
-      if (!validPath) {
-        console.error('[Util] Invalid classic log path', classicLogPath);
-        throw new Error(this.getLocaleError(Phrase.InvalidClassicLogPath));
-      }
-    }
+    //   if (!validPath) {
+    //     console.error('[Util] Invalid classic log path', classicLogPath);
+    //     throw new Error(this.getLocaleError(Phrase.InvalidClassicLogPath));
+    //   }
+    // }
 
-    if (recordEra) {
-      const validFlavours = ['wow_classic_era'];
-      const validPath =
-        validFlavours.includes(getWowFlavour(eraLogPath)) &&
-        path.basename(eraLogPath) === 'Logs';
+    // if (recordEra) {
+    //   const validFlavours = ['wow_classic_era'];
+    //   const validPath =
+    //     validFlavours.includes(getWowFlavour(eraLogPath)) &&
+    //     path.basename(eraLogPath) === 'Logs';
 
-      if (!validPath) {
-        console.error('[Util] Invalid era log path', eraLogPath);
-        throw new Error(this.getLocaleError(Phrase.InvalidEraLogPath));
+    //   if (!validPath) {
+    //     console.error('[Util] Invalid era log path', eraLogPath);
+    //     throw new Error(this.getLocaleError(Phrase.InvalidEraLogPath));
+    //   }
+    // }
+
+    if (recordFFXIV) {
+      if (!playerName || playerName.length === 0 || playerName.toUpperCase() === "YOU") {
+        throw new Error(this.getLocaleError(Phrase.ErrorPlayerNameYou));
       }
     }
   };
@@ -1222,7 +1216,7 @@ export default class Manager {
     // resumed.
     powerMonitor.on('suspend', () => {
       console.info('[Manager] Detected Windows is going to sleep.');
-      this.onWowStopped();
+      this.onXIVStopped();
     });
 
     powerMonitor.on('resume', () => {
@@ -1248,19 +1242,14 @@ export default class Manager {
       this.retailLogHandler.destroy();
     }
 
-    if (this.classicLogHandler) {
-      this.classicLogHandler.removeAllListeners();
-      this.classicLogHandler.destroy();
-    }
-
-    if (this.eraLogHandler) {
-      this.eraLogHandler.removeAllListeners();
-      this.eraLogHandler.destroy();
-    }
-
     if (this.retailPtrLogHandler) {
       this.retailPtrLogHandler.removeAllListeners();
       this.retailPtrLogHandler.destroy();
+    }
+
+    if (this.xivLogHandler) {
+      this.xivLogHandler.removeAllListeners();
+      this.xivLogHandler.dispose();
     }
 
     this.recorder = new Recorder(this.mainWindow);
@@ -1295,25 +1284,22 @@ export default class Manager {
     }
 
     const retailNotSafe = this.retailLogHandler?.activity;
-    const classicNotSafe = this.classicLogHandler?.activity;
-    const eraNotSafe = this.eraLogHandler?.activity;
     const retailPtrNotSafe = this.retailPtrLogHandler?.activity;
+    const xivNotSafe = this.xivLogHandler?.activity;
 
-    if (retailNotSafe || classicNotSafe || eraNotSafe || retailPtrNotSafe) {
+    if (retailNotSafe || retailPtrNotSafe || xivNotSafe) {
       console.info('[Manager] Not restarting recorder as in an activity');
       return;
     }
 
     const retailOverrunning = this.retailLogHandler?.overrunning;
-    const classicOverrunning = this.classicLogHandler?.overrunning;
-    const eraOverrunning = this.eraLogHandler?.overrunning;
     const retailPtrOverrunning = this.retailPtrLogHandler?.overrunning;
+    const xivOverrunning = this.xivLogHandler?.overrunning;
 
     if (
       retailOverrunning ||
-      classicOverrunning ||
-      eraOverrunning ||
-      retailPtrOverrunning
+      retailPtrOverrunning ||
+      xivOverrunning
     ) {
       console.info(
         '[Manager] Not restarting recorder as an activity is overrunning',

@@ -179,20 +179,10 @@ const SideMenu = (props: IProps) => {
           <Menu.Label>
             {getLocalePhrase(appState.language, Phrase.RecordingsHeading)}
           </Menu.Label>
-          {renderCategoryTab(VideoCategory.TwoVTwo, <Dice2 />)}
-          {renderCategoryTab(VideoCategory.ThreeVThree, <Dice3 />)}
-          {renderCategoryTab(VideoCategory.FiveVFive, <Dice5 />)}
-          {renderCategoryTab(VideoCategory.Skirmish, <Sword />)}
-          {renderCategoryTab(VideoCategory.SoloShuffle, <Swords />)}
-          {renderCategoryTab(
-            VideoCategory.MythicPlus,
-            <FontAwesomeIcon icon={faDungeon} size="xl" />,
-          )}
           {renderCategoryTab(
             VideoCategory.Raids,
             <FontAwesomeIcon icon={faDragon} size="lg" />,
           )}
-          {renderCategoryTab(VideoCategory.Battlegrounds, <Goal />)}
           {renderCategoryTab(VideoCategory.Clips, <Clapperboard />)}
         </Menu>
         <Separator className="my-5" />

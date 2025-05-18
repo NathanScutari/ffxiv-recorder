@@ -734,31 +734,9 @@ const CloudSettings = (props: IProps) => {
       <>
         <div className="flex flex-row gap-x-6">
           {getRetailUploadSwitch()}
-          {getClassicUploadSwitch()}
         </div>
         <div className="flex flex-row gap-x-6">
           {getSwitchForm('cloudUploadRaids', Phrase.UploadRaidsLabel)}
-          {getMinRaidDifficultySelect()}
-        </div>
-
-        <div className="flex flex-row gap-x-6">
-          {getSwitchForm('cloudUploadDungeons', Phrase.UploadMythicPlusLabel)}
-          {getMinKeystoneLevelField()}
-        </div>
-
-        <div className="flex flex-row gap-x-6">
-          {getSwitchForm('cloudUpload2v2', Phrase.Upload2v2Label)}
-          {getSwitchForm('cloudUpload3v3', Phrase.Upload3v3Label)}
-          {getSwitchForm('cloudUpload5v5', Phrase.Upload5v5Label)}
-          {getSwitchForm('cloudUploadSkirmish', Phrase.UploadSkirmishLabel)}
-          {getSwitchForm(
-            'cloudUploadSoloShuffle',
-            Phrase.UploadSoloShuffleLabel,
-          )}
-          {getSwitchForm(
-            'cloudUploadBattlegrounds',
-            Phrase.UploadBattlgroundsLabel,
-          )}
         </div>
 
         <div className="flex flex-row gap-x-6">

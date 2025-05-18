@@ -44,25 +44,25 @@ const Status = ({
   const getConfiguredFlavours = () => {
     const flavours: string[] = [];
 
-    if (config.recordRetail) {
-      const s = getLocalePhrase(appState.language, Phrase.Retail);
-      flavours.push(s);
-    }
+    // if (config.recordRetail) {
+    //   const s = getLocalePhrase(appState.language, Phrase.Retail);
+    //   flavours.push(s);
+    // }
 
-    if (config.recordClassic) {
-      const s = getLocalePhrase(appState.language, Phrase.Classic);
-      flavours.push(s);
-    }
+    // if (config.recordClassic) {
+    //   const s = getLocalePhrase(appState.language, Phrase.Classic);
+    //   flavours.push(s);
+    // }
 
-    if (config.recordEra) {
-      const s = getLocalePhrase(appState.language, Phrase.Era);
-      flavours.push(s);
-    }
+    // if (config.recordEra) {
+    //   const s = getLocalePhrase(appState.language, Phrase.Era);
+    //   flavours.push(s);
+    // }
 
-    if (config.recordRetailPtr) {
-      const s = getLocalePhrase(appState.language, Phrase.RetailPtr);
-      flavours.push(s);
-    }
+    // if (config.recordRetailPtr) {
+    //   const s = getLocalePhrase(appState.language, Phrase.RetailPtr);
+    //   flavours.push(s);
+    // }
 
     if (flavours.length > 0) {
       return `${flavours.join(', ')}.`;
@@ -188,44 +188,6 @@ const Status = ({
           )}
           {': '}
         </p>
-        <ul className="text-xs text-popover-foreground/60 list-disc pl-4">
-          {config.recordRetail && (
-            <li>
-              <span className="font-bold">
-                {getLocalePhrase(appState.language, Phrase.Retail)}
-                {': '}
-              </span>
-              <code>{config.retailLogPath}</code>
-            </li>
-          )}
-          {config.recordClassic && (
-            <li>
-              <span className="font-bold">
-                {getLocalePhrase(appState.language, Phrase.Classic)}
-                {': '}
-              </span>
-              <code>{config.classicLogPath}</code>
-            </li>
-          )}
-          {config.recordEra && (
-            <li>
-              <span className="font-bold">
-                {getLocalePhrase(appState.language, Phrase.Era)}
-                {': '}
-              </span>
-              <code>{config.eraLogPath}</code>
-            </li>
-          )}
-          {config.recordRetailPtr && (
-            <li>
-              <span className="font-bold">
-                {getLocalePhrase(appState.language, Phrase.RetailPtr)}
-                {': '}
-              </span>
-              <code>{config.retailPtrLogPath}</code>
-            </li>
-          )}
-        </ul>
         <Separator className="my-1" />
         <p className="text-xs text-popover-foreground/60">
           <span className="font-bold">

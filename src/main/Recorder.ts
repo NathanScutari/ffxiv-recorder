@@ -568,7 +568,7 @@ export default class Recorder extends EventEmitter {
   /**
    * Configures the video source in OBS.
    */
-  public configureVideoSources(config: ObsVideoConfig, isWowRunning: boolean) {
+  public configureVideoSources(config: ObsVideoConfig, isXIVRunning: boolean) {
     const { obsCaptureMode, monitorIndex, captureCursor } = config;
     this.clearFindWindowInterval();
 
@@ -586,12 +586,12 @@ export default class Recorder extends EventEmitter {
       this.configureMonitorCaptureSource(monitorIndex);
     }
 
-    if (!isWowRunning) {
-      // Don't try to configure game or window capture sources if WoW isn't
+    if (!isXIVRunning) {
+      // Don't try to configure game or window capture sources if XIV isn't
       // running. We won't be able to find them.
-      console.info("[Recorder] WoW isn't running");
+      console.info("[Recorder] FFXIV isn't running");
     } else {
-      console.info('[Recorder] WoW is running');
+      console.info('[Recorder] FFXIV is running');
 
       if (obsCaptureMode === 'game_capture') {
         this.configureGameCaptureSource(captureCursor);
@@ -1724,14 +1724,12 @@ export default class Recorder extends EventEmitter {
   }
 
   /**
-   * Check if the name of the window matches one of the known WoW window names.
+   * Check if the name of the window matches one of the known FFXIV window names.
    */
   private static windowMatch(item: { name: string; value: string | number }) {
     return (
-      item.name.startsWith('[Wow.exe]: ') ||
-      item.name.startsWith('[WowT.exe]: ') ||
-      item.name.startsWith('[WowB.exe]: ') ||
-      item.name.startsWith('[WowClassic.exe]: ')
+      item.name.startsWith('[FINAL FANTASY XIV.exe]: ') ||
+      item.name.startsWith('[ffxiv_dx11.exe]: ')
     );
   }
 

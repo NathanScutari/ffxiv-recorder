@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 ### Fixed
 
+## [7.0.0] 2025-05-18
+### Added
+- Supports for FFXIV, still using original Warcraft recorder cloud service and subscription
+
+### Changed
+- Pretty much all WoW features are disabled / not working now.
+
 ## [6.13.1] - 2025-05-16
 ### Changed
 - Change the polling mechanism to be websocket based, client refreshes are quicker and more efficient on the server side.

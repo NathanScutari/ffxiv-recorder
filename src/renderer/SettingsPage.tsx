@@ -118,13 +118,6 @@ const SettingsPage: React.FC<IProps> = (props: IProps) => {
                 <Separator className="mt-2 mb-4" />
                 <PVESettings appState={appState} />
               </div>
-              <div>
-                <CategoryHeading>
-                  {getLocalePhrase(appState.language, Phrase.PVPSettingsLabel)}
-                </CategoryHeading>
-                <Separator className="mt-2 mb-4" />
-                <PVPSettings appState={appState} />
-              </div>
             </div>
           </TabsContent>
           <TabsContent value="pro">

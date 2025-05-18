@@ -128,8 +128,8 @@ export default class StateManager {
       }
 
       if (!sameHash || videoToCompare.start === undefined) {
-        // Mismatching hash or no start time so either these videos or
-        // not correlated or we can't prove they are these are correlated.
+        // Mismatching hash or no start time so either these videos are
+        // not correlated or we can't prove they are correlated.
         continue;
       }
 
