@@ -634,7 +634,7 @@ export default class Manager {
 
     if (this.xivLogHandler) {
       this.xivLogHandler.removeAllListeners();
-      this.xivLogHandler.destroy();
+      this.xivLogHandler.dispose();
     }
 
     // if (config.recordRetail) {
@@ -1249,7 +1249,7 @@ export default class Manager {
 
     if (this.xivLogHandler) {
       this.xivLogHandler.removeAllListeners();
-      this.xivLogHandler.destroy();
+      this.xivLogHandler.dispose();
     }
 
     this.recorder = new Recorder(this.mainWindow);
