@@ -109,7 +109,7 @@ export default class Manager {
 
   private retailLogHandler: RetailLogHandler | undefined;
 
-  private xivLogHandler : FfXIVLogHandler | undefined;
+  private xivLogHandler: FfXIVLogHandler | undefined;
 
   private retailPtrLogHandler: RetailLogHandler | undefined;
 
@@ -137,7 +137,8 @@ export default class Manager {
       valid: false,
       current: this.obsBaseCfg,
       get: (cfg: ConfigService) => getObsBaseConfig(cfg),
-      validate: async (config: ObsBaseConfig) => this.validateBaseConfig(config),
+      validate: async (config: ObsBaseConfig) =>
+        this.validateBaseConfig(config),
       configure: async (config: ObsBaseConfig) => this.configureObsBase(config),
     },
     {
@@ -146,7 +147,8 @@ export default class Manager {
       current: this.obsVideoCfg,
       get: (cfg: ConfigService) => getObsVideoConfig(cfg),
       validate: async () => {},
-      configure: async (config: ObsVideoConfig) => this.configureObsVideo(config),
+      configure: async (config: ObsVideoConfig) =>
+        this.configureObsVideo(config),
     },
     {
       name: 'obsAudio',
@@ -154,7 +156,8 @@ export default class Manager {
       current: this.obsAudioCfg,
       get: (cfg: ConfigService) => getObsAudioConfig(cfg),
       validate: async () => {},
-      configure: async (config: ObsAudioConfig) => this.configureObsAudio(config),
+      configure: async (config: ObsAudioConfig) =>
+        this.configureObsAudio(config),
     },
     {
       name: 'flavour',
@@ -169,8 +172,10 @@ export default class Manager {
       valid: false,
       current: this.overlayCfg,
       get: (cfg: ConfigService) => getOverlayConfig(cfg),
-      validate: async (config: ObsOverlayConfig) => this.validateOverlayConfig(config),
-      configure: async (config: ObsOverlayConfig) => this.configureObsOverlay(config),
+      validate: async (config: ObsOverlayConfig) =>
+        this.validateOverlayConfig(config),
+      configure: async (config: ObsOverlayConfig) =>
+        this.configureObsOverlay(config),
     },
     {
       name: 'cloud',
@@ -178,7 +183,8 @@ export default class Manager {
       current: this.cloudCfg,
       get: (cfg: ConfigService) => getCloudConfig(cfg),
       validate: async (config: CloudConfig) => this.validateCloudConfig(config),
-      configure: async (config: CloudConfig) => this.configureCloudClient(config),
+      configure: async (config: CloudConfig) =>
+        this.configureCloudClient(config),
     },
     /* eslint-enable prettier/prettier */
   ];
@@ -624,12 +630,10 @@ export default class Manager {
 
     if (this.retailLogHandler) {
       this.retailLogHandler.removeAllListeners();
-      this.retailLogHandler.destroy();
     }
 
     if (this.retailPtrLogHandler) {
       this.retailPtrLogHandler.removeAllListeners();
-      this.retailPtrLogHandler.destroy();
     }
 
     if (this.xivLogHandler) {
@@ -689,8 +693,9 @@ export default class Manager {
       this.xivLogHandler = new FfXIVLogHandler(
         this.mainWindow,
         this.recorder,
-        this.videoProcessQueue
-      )
+        this.videoProcessQueue,
+        config.xivLogPath,
+      );
 
       this.xivLogHandler.on('state-change', () => this.refreshStatus());
     }
@@ -886,11 +891,7 @@ export default class Manager {
    * @throws an error describing why the config is invalid
    */
   private validateFlavour = (config: FlavourConfig) => {
-    const {
-      recordFFXIV,
-      xivLogPath,
-      playerName,
-    } = config;
+    const { recordFFXIV, xivLogPath } = config;
 
     // if (recordRetail) {
     //   const validFlavours = ['wow'];
@@ -943,8 +944,8 @@ export default class Manager {
     // }
 
     if (recordFFXIV) {
-      if (!playerName || playerName.length === 0 || playerName.toUpperCase() === "YOU") {
-        throw new Error(this.getLocaleError(Phrase.ErrorPlayerNameYou));
+      if (xivLogPath.length < 3) {
+        throw new Error(this.getLocaleError(Phrase.InvalidFFXIVLogPath));
       }
     }
   };
@@ -1261,12 +1262,10 @@ export default class Manager {
 
     if (this.retailLogHandler) {
       this.retailLogHandler.removeAllListeners();
-      this.retailLogHandler.destroy();
     }
 
     if (this.retailPtrLogHandler) {
       this.retailPtrLogHandler.removeAllListeners();
-      this.retailPtrLogHandler.destroy();
     }
 
     if (this.xivLogHandler) {
@@ -1318,11 +1317,7 @@ export default class Manager {
     const retailPtrOverrunning = this.retailPtrLogHandler?.overrunning;
     const xivOverrunning = this.xivLogHandler?.overrunning;
 
-    if (
-      retailOverrunning ||
-      retailPtrOverrunning ||
-      xivOverrunning
-    ) {
+    if (retailOverrunning || retailPtrOverrunning || xivOverrunning) {
       console.info(
         '[Manager] Not restarting recorder as an activity is overrunning',
       );

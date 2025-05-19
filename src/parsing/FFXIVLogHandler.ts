@@ -31,40 +31,44 @@ import { isUnitFriendly } from './logutils';
 import RaidEncounter from 'activitys/RaidEncounter';
 import { CombatantData, CombatDataEvent } from './CombatData';
 import { LogLineFFXIV } from './LogLineFFXIV';
+import Ennemy from 'main/Ennemy';
+import Player from 'main/Player';
+import CombatLogWatcherFFXIV from './CombatLogWatcherFFXIV';
 
 export default class FfXIVLogHandler extends LogHandler {
-  private xivWSServer: FFXIVWebSocketServer;
-
   private isInCombat: boolean;
   private playerName: string;
+
+  private combatLogWatcher: CombatLogWatcherFFXIV;
+
+  private ennemyList: Map<string, Ennemy>;
+  private playerList: Map<string, Player>;
 
   constructor(
     mainWindow: BrowserWindow,
     recorder: Recorder,
-    videoProcessQueue: VideoProcessQueue
+    videoProcessQueue: VideoProcessQueue,
+    xivLogPath: string
   ) {
     super(mainWindow, recorder, videoProcessQueue, 10);
     this.isInCombat = false;
+    this.combatLogWatcher = new CombatLogWatcherFFXIV(xivLogPath, 15000);
 
-    this.xivWSServer = new FFXIVWebSocketServer(13337);
-
-    this.xivWSServer.addOverlayListener('LogLine', (event) => {
-      if (this.isLogLine(event)) {
+    this.combatLogWatcher.on('LogLine', (event) => {
+      if (this.isLogLine(event))
         this.handleLogLine(event);
-      }
     });
 
-    this.xivWSServer.addOverlayListener('CombatData', (event) => {
-      if (this.isCombatDataEvent(event)) {
-        this.handleCombatData(event);
-      }
-    });
+    this.ennemyList = new Map<string, Ennemy>();
+    this.playerList = new Map<string, Player>();
 
-    this.playerName = this.cfg.get<string>('playerName');
+    this.playerName = '';
+
+    this.combatLogWatcher.watch();
   }
 
   public dispose() {
-    this.xivWSServer.dispose();
+    this.combatLogWatcher.unwatch();
   }
 
   private isLogLine(event: any): event is LogLineFFXIV {
@@ -88,7 +92,7 @@ export default class FfXIVLogHandler extends LogHandler {
   private isRaid(event: CombatDataEvent): boolean {
     return (
       Object.values(event.Combatant).filter((c: any) => c.Job !== undefined)
-        .length === 8
+        .length === 1
     );
   }
 
@@ -97,62 +101,45 @@ export default class FfXIVLogHandler extends LogHandler {
   }
 
   private handleCombatData(event: CombatDataEvent) {
-    if (!this.isInCombat) {
-      if (event.isActive === 'true' && this.isRaid(event)) {
-        //Un combat de raid a démarré
-        this.playerName = this.cfg.get<string>('playerName');
-        this.isInCombat = true;
-        super.handleEncounterStartLine(event, Flavour.FFXIV);
+    if (!this.isInCombat) return;
+
+    if (!this.activity && this.isRaid(event)) {
+      super.handleEncounterStartLine(event, Flavour.FFXIV);
+    }
+
+    if (!this.activity) return;
+
+    if (!this.activity.playerGUID) this.activity.playerGUID = this.playerName;
+  }
+
+  private handleUnitAddedLine(line: LogLineFFXIV): void {
+    const entity = line.line[3];
+    const job = line.line[4];
+    const id = line.line[2];
+
+    if (entity && job != '00') {
+      this.playerList.set(id, new Player(entity, job));
+      console.log('Added player: ', entity);
+    }
+  }
+
+  private handleUnitRemovedLine(line: LogLineFFXIV): void {
+    const entity = line.line[3];
+    const currentHp = line.line[11];
+    const maxHp = line.line[12];
+    const id = line.line[2];
+
+    if (this.activity) {
+      if (currentHp === maxHp) {
+        console.log('Removed ennemy: ', entity, id);
+        this.ennemyList.delete(id);
+      } else {
+        this.ennemyList.get(id)?.markForRemoval();
       }
-
-      //Correspond à des event hors combat
-      return;
     }
 
-    if (!this.activity) {
-      console.error('No activity in progress while isInCombat is true');
-      this.isInCombat = false;
-      this.forceEndActivity();
-      return;
-    }
-
-    if (this.activity.getPlayerCount() > 2) {
-      console.info(
-        'Stopped recording because player count exceeded maximum allowed.',
-      );
-      this.isInCombat = false;
-      this.forceEndActivity();
-    }
-
-    //fin de combat
-    if (event.isActive === 'false') {
-      this.isInCombat = false;
-      this.handleEncounterEndLine(event);
-    }
-
-    //Gestion des combatants, permet de récupérer les infos des joueurs du combat et les ajouter à l'activité, ou mettre à jour le job dans le cas du "YOU"
-    if (this.isInCombat) {
-      for (let combatant of Object.values(event.Combatant)) {
-        //cas particulier pour YOU, on essaye de le mettre à jour pour récupérer son job
-        if (combatant.name === 'YOU') {
-          if (combatant.Job) {
-            this.activity.playerGUID = this.playerName;
-          }
-          combatant.name = this.playerName;
-        }
-
-        //peut être un boss, un familier, une add etc
-        if (!this.isPlayer(combatant)) {
-          continue;
-        }
-
-        let player = this.activity.getCombatant(combatant.name);
-
-        if (!player || !player.isFullyDefined()) {
-          player = new Combatant(combatant.name, combatant.Job);
-          this.activity.addCombatant(player);
-        }
-      }
+    if (this.playerList.delete(id)) {
+      console.log('Removed player: ', entity);
     }
   }
 
@@ -163,9 +150,132 @@ export default class FfXIVLogHandler extends LogHandler {
       case '25': // death
         this.handleUnitDiedLine(event);
         break;
-      default:
-        // console.debug('Unhandled opcode', opCode);
+      case '21': // damage info (when spell is used)
+        this.handleUnitPreDamageEvent(event);
         break;
+      case '37': // damage info (when the target actually takes damage)
+        this.handleUnitDamageEvent(event);
+        break;
+      case '02': // primary player
+        this.handlePrimaryPlayer(event);
+        break;
+      case '03': // add unit
+        this.handleUnitAddedLine(event);
+        break;
+      case '04': // remove unit
+        this.handleUnitRemovedLine(event);
+        break;
+      case '260': // inCombat
+        this.handleInCombatLine(event);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private handlePrimaryPlayer(line: LogLineFFXIV) {
+    console.log('Got YOU: ', line.line[3]);
+    this.playerName = line.line[3];
+  }
+
+  private updateMarkedRemoval() {
+    const toRemove = [...this.ennemyList.values()].filter((e) => e.checkMark());
+
+    for (const ennemy of toRemove) {
+      console.log('Removed ennemy marked: ', ennemy.name, ennemy.id);
+      this.ennemyList.delete(ennemy.id);
+    }
+  }
+
+  private handleInCombatLine(line: LogLineFFXIV): void {
+    const inActCombat = line.line[2];
+
+    console.log("Combat event", line.rawLine);
+
+    //début de combat
+    if (!this.isInCombat && inActCombat == '1') {
+      this.ennemyList.clear();
+      this.isInCombat = true;
+      super.handleEncounterStartLine(line, Flavour.FFXIV);
+      if (this.activity)
+        this.activity.playerGUID = this.playerName;
+    }
+
+    //fin de combat
+    if (this.isInCombat && inActCombat == '0') {
+      this.isInCombat = false;
+      this.handleEncounterEndLine(this.ennemyList);
+    }
+  }
+
+  private handleUnitPreDamageEvent(event: LogLineFFXIV): void {
+    if (!this.activity) return;
+    if (event.line.length < 6) return;
+
+    // On récupère les combattants que dans les 10 premières secondes, le temps de voir si il faut annuler la vidéo,
+    // après on arrête de vérifier pour éviter du process inutile.
+    if (
+      new Date(Date.now()).getTime() - this.activity.startDate.getTime() >
+      10000
+    )
+      return;
+
+    const entity = event.line[3];
+    const id = event.line[2];
+
+    let player = this.activity.getCombatant(entity);
+    if (!player) {
+      const storedPlayer = this.playerList.get(id);
+      if (storedPlayer) {
+        player = new Combatant(storedPlayer.name, storedPlayer.job);
+        console.log('Added combatant: ', entity);
+        this.activity.addCombatant(player);
+
+        // Si plus de 8 personnes, alors on est pas en raid
+        if (this.activity.getPlayerCount() > 8) {
+          console.info(
+            'Stopped recording because player count exceeded maximum allowed.',
+          );
+          this.isInCombat = false;
+          this.forceEndActivity();
+        }
+      }
+    }
+  }
+
+  private handleUnitDamageEvent(event: LogLineFFXIV): void {
+    if (!this.activity) return;
+    if (event.line.length < 6) return;
+    if (
+      new Date(Date.now()).getTime() - this.activity.startDate.getTime() <
+      10000
+    )
+      return;
+
+    this.updateMarkedRemoval();
+
+    //Corresponds to the target entity receiving damage
+    const entity = event.line[3];
+    const currentHealth = event.line[5];
+    const maxHealth = event.line[6];
+    const id = event.line[2];
+
+    let player = this.activity.getCombatant(entity);
+
+    //Not an allied player, so we track its health, used at the end to determine which entity is the boss and if wipe / kill
+    if (!player) {
+      const ennemy = this.ennemyList.get(id);
+
+      if (!ennemy) {
+        console.log('Ennemy added: ', entity, id);
+        console.log(event.rawLine);
+        this.ennemyList.set(
+          id,
+          new Ennemy(entity, parseInt(currentHealth), parseInt(maxHealth), id),
+        );
+      } else {
+        ennemy.health = parseInt(currentHealth);
+      }
     }
   }
 
@@ -186,43 +296,26 @@ export default class FfXIVLogHandler extends LogHandler {
     await this.startActivity(activity);
   }
 
-  protected async handleEncounterEndLine(event: CombatDataEvent) {
+  protected async handleEncounterEndLine(ennemyList: Map<string, Ennemy>) {
     if (!this.activity) return;
-    super.handleEncounterEndLine(event);
+    super.handleEncounterEndLine(this.ennemyList);
   }
 
   protected handleUnitDiedLine(event: LogLineFFXIV): void {
     if (!this.activity) return;
 
-    const playerName = event.line[3];
-    const player = this.activity.getCombatant(playerName);
+    const entityName = event.line[3];
+    const id = event.line[2];
+    const player = this.activity.getCombatant(entityName);
 
-    console.log(event.rawLine);
-
-    if (!player) {
+    if (player) {
+      super.handleUnitDiedLine(event);
       return;
     }
 
-    super.handleUnitDiedLine(event);
-    // const playerName = line.arg(2); // à confirmer
-    // const playerGUID = line.arg(1);
-    // const unitFlags = 0xf000; // à définir selon ton format
-    // const isUnitUnconsciousAtDeath = false;
+    const ennemy = this.ennemyList.get(id);
+    if (!ennemy) return;
 
-    // const playerSpecId = this.activity.getCombatant(playerGUID)?.specID ?? 0;
-    // const deathDate = (line.date().getTime() - 2) / 1000;
-    // const activityStartDate = this.activity.startDate.getTime() / 1000;
-    // let relativeTime = deathDate - activityStartDate;
-    // if (relativeTime < 0) relativeTime = 0;
-
-    // const playerDeath: PlayerDeathType = {
-    //   name: playerName,
-    //   specId: playerSpecId,
-    //   date: line.date(),
-    //   timestamp: relativeTime,
-    //   friendly: isUnitFriendly(unitFlags),
-    // };
-
-    // this.activity.addDeath(playerDeath);
+    ennemy.isDead = true;
   }
 }

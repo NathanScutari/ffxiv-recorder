@@ -188,6 +188,17 @@ const Status = ({
           )}
           {': '}
         </p>
+        <ul className="text-xs text-popover-foreground/60 list-disc pl-4">
+        {config.recordFFXIV && (
+            <li>
+              <span className="font-bold">
+                {getLocalePhrase(appState.language, Phrase.FFXIV)}
+                {': '}
+              </span>
+              <code>{config.xivLogPath}</code>
+            </li>
+          )}
+        </ul>
         <Separator className="my-1" />
         <p className="text-xs text-popover-foreground/60">
           <span className="font-bold">

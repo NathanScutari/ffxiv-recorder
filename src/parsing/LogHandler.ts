@@ -21,6 +21,7 @@ import { VideoCategory } from '../types/VideoCategory';
 import { allowRecordCategory, getFlavourConfig } from '../utils/configUtils';
 import { CombatDataEvent, CombatantData } from './CombatData';
 import { LogLineFFXIV } from './LogLineFFXIV';
+import Ennemy from 'main/Ennemy';
 
 /**
  * Generic LogHandler class. Everything in this class must be valid for both
@@ -62,13 +63,13 @@ export default abstract class LogHandler extends EventEmitter {
     super();
 
     this.mainWindow = mainWindow;
-     this.recorder = recorder;
+    this.recorder = recorder;
 
     this.videoProcessQueue = videoProcessQueue;
   }
 
   protected async handleEncounterStartLine(
-    event: CombatDataEvent,
+    event: LogLineFFXIV,
     flavour: Flavour,
   ) {
     console.debug('[LogHandler] Handling ENCOUNTER_START event:');
@@ -76,7 +77,7 @@ export default abstract class LogHandler extends EventEmitter {
     let encounterName;
 
     startDate = new Date(Date.now());
-    encounterName = event.Encounter.CurrentZoneName;
+    encounterName = '';
 
     const activity = new RaidEncounter(
       startDate,
@@ -95,7 +96,7 @@ export default abstract class LogHandler extends EventEmitter {
     return !hasJob && hp > 1000000; // seuil arbitraire à ajuster
   }
 
-  protected async handleEncounterEndLine(event: CombatDataEvent) {
+  protected async handleEncounterEndLine(ennemyList: Map<string, Ennemy>) {
     console.debug('[LogHandler] Handling ENCOUNTER_END event:');
 
     if (!this.activity) {
@@ -103,11 +104,62 @@ export default abstract class LogHandler extends EventEmitter {
       return;
     }
 
-    const boss = Object.values(event.Combatant)
-      .filter(this.isPotentialBoss)
-      .sort((a, b) => parseInt(b.damagetaken ?? "0") - parseInt(a.damagetaken ?? "0"))[0];
+    let sumOfEnnemyHealth = 0;
+    for (const ennemy of ennemyList.values()) {
+      sumOfEnnemyHealth +=
+        !Number.isNaN(ennemy.maxHealth) && ennemy.maxHealth
+          ? ennemy.maxHealth
+          : 0;
+    }
+    //We consider a boss an entity that has at list 30% of the sum of the max hp, should account for fight ending with multiple boss death close to each other
+    const bossList = [...ennemyList.values()].filter(
+      (ennemy) =>
+        !Number.isNaN(ennemy.maxHealth) &&
+        ennemy.maxHealth &&
+        ennemy.maxHealth >= sumOfEnnemyHealth * 0.3,
+    );
 
-    const result = (boss?.deaths && boss?.deaths >= 1) === true ?? false;
+    //Fight percentage will be the higher values of all ennemies in bossList except 100%
+    let maxHealthPercentage = 0;
+    for (const boss of bossList) {
+      if (
+        boss.health &&
+        boss.maxHealth &&
+        !Number.isNaN(boss.health) &&
+        !Number.isNaN(boss.maxHealth)
+      ) {
+        const bossPercentage = (boss.health * 100) / boss.maxHealth;
+        if (bossPercentage != 100 && bossPercentage > maxHealthPercentage) {
+          maxHealthPercentage = bossPercentage;
+          if (this.activity instanceof RaidEncounter) {
+            this.activity.encounterName = boss.name;
+          }
+        }
+      }
+    }
+
+    if (this.activity instanceof RaidEncounter) {
+      this.activity.fightPercentage =
+        Math.round(maxHealthPercentage * 100) / 100;
+
+      if (bossList.length > 0 && bossList.every((b) => b.isDead)) {
+        this.activity.encounterName = bossList.reduce(
+          (max, b) =>
+            !Number.isNaN(b.maxHealth) &&
+            b.maxHealth &&
+            b.maxHealth >
+              (!Number.isNaN(max.maxHealth) && max.maxHealth && max.maxHealth
+                ? max.maxHealth
+                : 0)
+              ? b
+              : max,
+          bossList[0],
+        ).name;
+      }
+    }
+
+    //Kill only if all ennemies in bosslist are dead
+    const result = bossList.every((boss) => boss.isDead);
 
     if (result) {
       const overrun = this.cfg.get<number>('raidOverrun');
@@ -125,10 +177,9 @@ export default abstract class LogHandler extends EventEmitter {
 
     const playerName = event.line[3];
 
-    const deathDate =
-      new Date(new Date(Date.now()).getTime() - 2000);
+    const deathDate = new Date(new Date(Date.now()).getTime() - 2000);
     const activityStartDate = this.activity.startDate.getTime() / 1000;
-    let relativeTime = (deathDate.getTime() / 1000) - activityStartDate;
+    let relativeTime = deathDate.getTime() / 1000 - activityStartDate;
     if (relativeTime < 0) relativeTime = 0;
 
     const playerDeath: PlayerDeathType = {
@@ -136,7 +187,7 @@ export default abstract class LogHandler extends EventEmitter {
       friendly: true,
       name: playerName,
       date: deathDate,
-      timestamp: relativeTime
+      timestamp: relativeTime,
     };
 
     this.activity.addDeath(playerDeath);

@@ -50,7 +50,6 @@ export const getSettings = (): ConfigurationSchema => {
     minimizeOnQuit: getConfigValue<boolean>('minimizeOnQuit'),
     minimizeToTray: getConfigValue<boolean>('minimizeToTray'),
     minRaidDifficulty: getConfigValue<string>('minRaidDifficulty'),
-    playerName: getConfigValue<string>('playerName'),
     chatOverlayEnabled: getConfigValue<boolean>('chatOverlayEnabled'),
     chatOverlayOwnImage: getConfigValue<boolean>('chatOverlayOwnImage'),
     chatOverlayOwnImagePath: getConfigValue<string>('chatOverlayOwnImagePath'),

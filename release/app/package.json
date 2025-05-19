@@ -1,10 +1,10 @@
 {
-  "name": "WarcraftRecorder",
-  "version": "6.13.2",
-  "description": "A World of Warcraft screen recorder",
+  "name": "FFXIVRecorder",
+  "version": "7.1.0",
+  "description": "A FFXIV screen recorder",
   "main": "./dist/main/main.js",
   "author": {
-    "name": "Alex K"
+    "name": "Nathan S"
   },
   "scripts": {
     "electron-rebuild": "node -r ts-node/register ../../.erb/scripts/electron-rebuild.js",

@@ -26,6 +26,8 @@ export default class RaidEncounter extends Activity {
 
   private maxHp = 1;
 
+  private _fightPercentage: number;
+
   constructor(
     startDate: Date,
     encounterName: string,
@@ -37,10 +39,19 @@ export default class RaidEncounter extends Activity {
     this._encounterID = 0;
     this._encounterName = encounterName;
     this.overrun = 1; // Even for wipes it's nice to have some overrun.
+    this._fightPercentage = 100;
+  }
+
+  set fightPercentage(value: number) {
+    this._fightPercentage = value;
   }
 
   get encounterName() {
     return this._encounterName;
+  }
+
+  set encounterName(value: string) {
+    this._encounterName = value;
   }
 
   get resultInfo() {
@@ -60,8 +71,6 @@ export default class RaidEncounter extends Activity {
   get encounterID() {
     return this._encounterID;
   }
-
-
   
   get zoneID(): number {
     if (!this.encounterID) {
@@ -119,7 +128,7 @@ export default class RaidEncounter extends Activity {
       (combatant: Combatant) => combatant.getRaw(),
     );
 
-    const bossPercent = Math.round((100 * this.currentHp) / this.maxHp);
+    const bossPercent = this._fightPercentage;
 
     return {
       category: VideoCategory.Raids,

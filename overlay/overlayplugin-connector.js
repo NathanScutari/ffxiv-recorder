@@ -129,10 +129,10 @@
       console.log('Connected to FFXIV Recorder');
 
       // Transfert des événements OverlayPlugin vers FFXIV Recorder
-      window.removeEventListener('LogLine', sendLogLine);
+      window.removeOverlayListener('LogLine', sendLogLine);
       window.addOverlayListener('LogLine', sendLogLine);
 
-      window.removeEventListener('CombatData', sendCombatData);
+      window.removeOverlayListener('CombatData', sendCombatData);
       window.addOverlayListener('CombatData', sendCombatData);
 
       console.log("Démarrage de l'écoute des logs ACT");

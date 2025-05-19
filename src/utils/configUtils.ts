@@ -187,7 +187,7 @@ const getObsAudioConfig = (cfg: ConfigService): ObsAudioConfig => {
 const getFlavourConfig = (cfg: ConfigService): FlavourConfig => {
   return {
     recordFFXIV: cfg.get<boolean>('recordFFXIV'),
-    playerName: cfg.get<string>('playerName'),
+    xivLogPath: cfg.get<string>('xivLogPath'),
   };
 };
 

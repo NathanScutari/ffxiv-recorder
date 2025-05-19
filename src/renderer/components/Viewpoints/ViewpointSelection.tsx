@@ -40,6 +40,7 @@ export default function ViewpointSelection(props: IProps) {
 
     let unitClass: WoWCharacterClassType = 'UNKNOWN';
     let currentlySelected = false;
+    let povAvailable = false;
 
     if (matches.length > 0) {
       // We only bother to get a class if we have a match. That way the
@@ -47,6 +48,7 @@ export default function ViewpointSelection(props: IProps) {
       // be gray.
       const v = matches[0];
       unitClass = getPlayerClass(v);
+      povAvailable = true;
     }
 
     matches.forEach((rv: RendererVideo) => {
@@ -151,8 +153,12 @@ export default function ViewpointSelection(props: IProps) {
       });
     };
 
-    const classColor =
+    let classColor =
       unitClass === 'UNKNOWN' ? 'gray' : getWoWClassColor(unitClass);
+
+    if (povAvailable) {
+      classColor = 'lightgray';
+    }
 
     const cursor = cloudVideo || diskVideo ? 'cursor-pointer' : '';
     const selected = currentlySelected

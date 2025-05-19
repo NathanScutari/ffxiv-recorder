@@ -32,14 +32,11 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
     }
 
     setConfigValues({
-      recordFFXIV: config.recordFFXIV
+      recordFFXIV: config.recordFFXIV,
     });
 
     ipc.sendMessage('settingsChange', []);
-  }, [
-    config.recordFFXIV,
-    config.xivLogPath,
-  ]);
+  }, [config.recordFFXIV, config.xivLogPath]);
 
   const isComponentDisabled = () => {
     const isRecording = recorderStatus === RecStatus.Recording;
@@ -122,6 +119,41 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
             {getSwitch('recordFFXIV', setRecordFFXIV)}
           </div>
         </div>
+        {config.recordFFXIV && (
+          <div className="flex flex-col w-1/2">
+            <Label htmlFor="xivLogPath" className="flex items-center">
+              {getLocalePhrase(appState.language, Phrase.XIVLogPathLabel)}
+
+              <Tooltip
+                content={getLocalePhrase(
+                  appState.language,
+
+                  configSchema.classicLogPath.description,
+                )}
+                side="top"
+              >
+                <Info size={20} className="inline-flex ml-2" />
+              </Tooltip>
+            </Label>
+
+            <Input
+              value={config.xivLogPath}
+              onClick={setXIVLogPath}
+              readOnly
+              required
+            />
+
+            {config.xivLogPath === '' && (
+              <span className="text-error text-sm">
+                {getLocalePhrase(
+                  appState.language,
+
+                  Phrase.InvalidFFXIVLogPath,
+                )}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     );
   };

@@ -401,7 +401,7 @@ type ObsAudioConfig = {
 
 type FlavourConfig = {
   recordFFXIV: boolean;
-  playerName: string
+  xivLogPath: string;
 };
 
 type CloudConfig = {

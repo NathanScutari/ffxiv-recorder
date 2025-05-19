@@ -32,7 +32,6 @@ export type ConfigurationSchema = {
   captureCursor: boolean;
   minKeystoneLevel: number;
   minRaidDifficulty: string;
-  playerName: string;
   minimizeOnQuit: boolean;
   minimizeToTray: boolean;
   chatOverlayEnabled: boolean;
@@ -285,11 +284,6 @@ export const configSchema = {
     description: Phrase.MinRaidDifficultyDescription,
     type: 'string',
     default: 'LFR',
-  },
-  playerName: {
-    description: Phrase.PlayerNameDescription,
-    type: 'string',
-    default: '',
   },
   minimizeOnQuit: {
     description: Phrase.MinimizeOnQuitDescription,
