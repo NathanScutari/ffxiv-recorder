@@ -33,6 +33,7 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
 
     setConfigValues({
       recordFFXIV: config.recordFFXIV,
+      xivLogPath: config.xivLogPath
     });
 
     ipc.sendMessage('settingsChange', []);
@@ -128,7 +129,7 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
                 content={getLocalePhrase(
                   appState.language,
 
-                  configSchema.classicLogPath.description,
+                  configSchema.xivLogPath.description,
                 )}
                 side="top"
               >

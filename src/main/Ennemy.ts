@@ -73,8 +73,16 @@ export default class Ennemy {
     return this._id;
   }
   
+  public unMark() {
+    if (this._markedForRemoval && new Date(Date.now()).getTime() - this._markedForRemoval.getTime() > 3 * 1000) {
+      console.info("Unmarked Ennemy", this._name, this._id);
+      this._markedForRemoval = undefined;
+    }
+  }
+
   public markForRemoval() {
     this._markedForRemoval = new Date(Date.now());
+    console.info("Ennemy marked ", this.name, this.id);
   }
   
   public checkMark(): boolean {

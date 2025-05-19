@@ -87,6 +87,7 @@ export default class ConfigService
 
     console.info('[Config Service] Using configuration', loggable);
 
+
     this._store.onDidAnyChange((newValue: any, oldValue: any) => {
       this.emit('configChanged', oldValue, newValue);
     });

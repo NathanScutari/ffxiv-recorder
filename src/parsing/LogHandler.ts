@@ -111,6 +111,14 @@ export default abstract class LogHandler extends EventEmitter {
           ? ennemy.maxHealth
           : 0;
     }
+
+    console.info("Ennemies :", [...ennemyList.values()].length);
+    for (const ennemy of ennemyList.values()) {
+      if (!Number.isNaN(ennemy.health) && !Number.isNaN(ennemy.maxHealth)) {
+        console.info("- ", ennemy.name, ennemy.id, Math.round(ennemy.maxHealth * 100 / sumOfEnnemyHealth))
+      }
+    }
+
     //We consider a boss an entity that has at list 30% of the sum of the max hp, should account for fight ending with multiple boss death close to each other
     const bossList = [...ennemyList.values()].filter(
       (ennemy) =>
@@ -129,7 +137,7 @@ export default abstract class LogHandler extends EventEmitter {
         !Number.isNaN(boss.maxHealth)
       ) {
         const bossPercentage = (boss.health * 100) / boss.maxHealth;
-        if (bossPercentage != 100 && bossPercentage > maxHealthPercentage) {
+        if (bossPercentage > maxHealthPercentage) {
           maxHealthPercentage = bossPercentage;
           if (this.activity instanceof RaidEncounter) {
             this.activity.encounterName = boss.name;

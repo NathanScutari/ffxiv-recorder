@@ -48,15 +48,14 @@ export default class FfXIVLogHandler extends LogHandler {
     mainWindow: BrowserWindow,
     recorder: Recorder,
     videoProcessQueue: VideoProcessQueue,
-    xivLogPath: string
+    xivLogPath: string,
   ) {
     super(mainWindow, recorder, videoProcessQueue, 10);
     this.isInCombat = false;
     this.combatLogWatcher = new CombatLogWatcherFFXIV(xivLogPath, 15000);
 
     this.combatLogWatcher.on('LogLine', (event) => {
-      if (this.isLogLine(event))
-        this.handleLogLine(event);
+      if (this.isLogLine(event)) this.handleLogLine(event);
     });
 
     this.ennemyList = new Map<string, Ennemy>();
@@ -100,18 +99,6 @@ export default class FfXIVLogHandler extends LogHandler {
     return combatant.Job !== undefined;
   }
 
-  private handleCombatData(event: CombatDataEvent) {
-    if (!this.isInCombat) return;
-
-    if (!this.activity && this.isRaid(event)) {
-      super.handleEncounterStartLine(event, Flavour.FFXIV);
-    }
-
-    if (!this.activity) return;
-
-    if (!this.activity.playerGUID) this.activity.playerGUID = this.playerName;
-  }
-
   private handleUnitAddedLine(line: LogLineFFXIV): void {
     const entity = line.line[3];
     const job = line.line[4];
@@ -120,6 +107,14 @@ export default class FfXIVLogHandler extends LogHandler {
     if (entity && job != '00') {
       this.playerList.set(id, new Player(entity, job));
       console.log('Added player: ', entity);
+    }
+
+    if (this.activity) {
+      const ennemy = this.ennemyList.get(id);
+      if (ennemy) {
+        console.log("Trying to unmark", ennemy.name, ennemy.id);
+        ennemy.unMark();
+      }
     }
   }
 
@@ -190,15 +185,14 @@ export default class FfXIVLogHandler extends LogHandler {
   private handleInCombatLine(line: LogLineFFXIV): void {
     const inActCombat = line.line[2];
 
-    console.log("Combat event", line.rawLine);
+    console.log('Combat event', line.rawLine);
 
     //début de combat
     if (!this.isInCombat && inActCombat == '1') {
       this.ennemyList.clear();
       this.isInCombat = true;
       super.handleEncounterStartLine(line, Flavour.FFXIV);
-      if (this.activity)
-        this.activity.playerGUID = this.playerName;
+      if (this.activity) this.activity.playerGUID = this.playerName;
     }
 
     //fin de combat
@@ -215,32 +209,80 @@ export default class FfXIVLogHandler extends LogHandler {
     // On récupère les combattants que dans les 10 premières secondes, le temps de voir si il faut annuler la vidéo,
     // après on arrête de vérifier pour éviter du process inutile.
     if (
-      new Date(Date.now()).getTime() - this.activity.startDate.getTime() >
+      new Date(Date.now()).getTime() - this.activity.startDate.getTime() <
       10000
-    )
-      return;
+    ) {
+      const entity = event.line[3];
+      const id = event.line[2];
+      const owner = event.line[47];
 
-    const entity = event.line[3];
-    const id = event.line[2];
+      if (owner != "00") {
+        console.info("owner detected, skipping");
+        return;
+      }
 
-    let player = this.activity.getCombatant(entity);
-    if (!player) {
-      const storedPlayer = this.playerList.get(id);
-      if (storedPlayer) {
-        player = new Combatant(storedPlayer.name, storedPlayer.job);
-        console.log('Added combatant: ', entity);
-        this.activity.addCombatant(player);
+      let player = this.activity.getCombatant(entity);
+      if (!player) {
+        const storedPlayer = this.playerList.get(id);
+        if (storedPlayer) {
+          player = new Combatant(storedPlayer.name, storedPlayer.job);
+          console.log('Added combatant: ', entity);
+          this.activity.addCombatant(player);
 
-        // Si plus de 8 personnes, alors on est pas en raid
-        if (this.activity.getPlayerCount() > 8) {
-          console.info(
-            'Stopped recording because player count exceeded maximum allowed.',
-          );
-          this.isInCombat = false;
-          this.forceEndActivity();
+          // Si plus de 8 personnes, alors on est pas en raid
+          if (this.activity.getPlayerCount() > 8) {
+            console.info(
+              'Stopped recording because player count exceeded maximum allowed.',
+            );
+            this.isInCombat = false;
+            this.forceEndActivity();
+          }
         }
       }
+    } else {
+      if (this.activity.getPlayerCount() < 8) {
+        console.info("Force stopping, not 8 player content");
+        this.forceEndActivity();
+      }
+
+      const entity = event.line[3];
+      const id = event.line[2];
+      const currentHealth = event.line[34];
+      const maxHealth = event.line[35];
+
+      this.checkAddEnnemy(entity, id, currentHealth, maxHealth);
+
+      const targetEntity = event.line[7];
+      const targetId = event.line[6];
+      const targetCurrentHealth = event.line[24];
+      const targetMaxHealth = event.line[25];
+
+      this.checkAddEnnemy(targetEntity, targetId, targetCurrentHealth, targetMaxHealth);
     }
+  }
+
+  private checkAddEnnemy(entity: string, id: string, currentHealth: string , maxHealth: string) {
+    if (entity == "") return;
+    const ennemy = this.ennemyList.get(id);
+    const player = this.activity?.getCombatant(entity);
+
+    if (player) return;
+
+      if (!ennemy) {
+        console.log('Ennemy added: ', entity, id);
+        this.ennemyList.set(
+          id,
+          new Ennemy(entity, parseInt(currentHealth), parseInt(maxHealth), id),
+        );
+      } else {
+        let health = parseInt(currentHealth);
+        let maxHealthParsed = parseInt(maxHealth);
+        if (!Number.isNaN(health) && !Number.isNaN(maxHealth)) {
+          ennemy.health = health;
+          ennemy.maxHealth = maxHealthParsed;
+        }
+        ennemy.unMark();
+      }
   }
 
   private handleUnitDamageEvent(event: LogLineFFXIV): void {
@@ -260,40 +302,7 @@ export default class FfXIVLogHandler extends LogHandler {
     const maxHealth = event.line[6];
     const id = event.line[2];
 
-    let player = this.activity.getCombatant(entity);
-
-    //Not an allied player, so we track its health, used at the end to determine which entity is the boss and if wipe / kill
-    if (!player) {
-      const ennemy = this.ennemyList.get(id);
-
-      if (!ennemy) {
-        console.log('Ennemy added: ', entity, id);
-        console.log(event.rawLine);
-        this.ennemyList.set(
-          id,
-          new Ennemy(entity, parseInt(currentHealth), parseInt(maxHealth), id),
-        );
-      } else {
-        ennemy.health = parseInt(currentHealth);
-      }
-    }
-  }
-
-  protected async handleEncounterStartLine(
-    event: CombatDataEvent,
-    flavour: Flavour,
-  ) {
-    const startDate = new Date(Date.now());
-    const encounterName = event.Encounter.title; // À adapter selon structure de log
-
-    const activity = new RaidEncounter(
-      startDate,
-      encounterName,
-      flavour,
-      this.cfg,
-    );
-
-    await this.startActivity(activity);
+    this.checkAddEnnemy(entity, id, currentHealth, maxHealth);
   }
 
   protected async handleEncounterEndLine(ennemyList: Map<string, Ennemy>) {
