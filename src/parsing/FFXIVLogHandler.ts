@@ -38,6 +38,7 @@ import CombatLogWatcherFFXIV from './CombatLogWatcherFFXIV';
 export default class FfXIVLogHandler extends LogHandler {
   private isInCombat: boolean;
   private playerName: string;
+  private zoneName: string;
 
   private combatLogWatcher: CombatLogWatcherFFXIV;
 
@@ -61,7 +62,11 @@ export default class FfXIVLogHandler extends LogHandler {
     this.ennemyList = new Map<string, Ennemy>();
     this.playerList = new Map<string, Player>();
 
-    this.playerName = '';
+    this.playerName = this.cfg.get<string>('playerName');
+    this.zoneName = this.cfg.get<string>('zoneName');
+
+    console.log("Restored last known player name: ", this.playerName);
+    console.log("Restored last known map: ", this.zoneName);
 
     this.combatLogWatcher.watch();
   }
@@ -95,24 +100,17 @@ export default class FfXIVLogHandler extends LogHandler {
     );
   }
 
-  private isPlayer(combatant: CombatantData): boolean {
-    return combatant.Job !== undefined;
+  private isPlayer(id: string, ownerId: string): boolean {
+    return id.startsWith('10') && ownerId == '00';
   }
 
   private handleUnitAddedLine(line: LogLineFFXIV): void {
-    const entity = line.line[3];
-    const job = line.line[4];
     const id = line.line[2];
-
-    if (entity && job != '00') {
-      this.playerList.set(id, new Player(entity, job));
-      console.log('Added player: ', entity);
-    }
 
     if (this.activity) {
       const ennemy = this.ennemyList.get(id);
       if (ennemy) {
-        console.log("Trying to unmark", ennemy.name, ennemy.id);
+        console.log('Trying to unmark', ennemy.name, ennemy.id);
         ennemy.unMark();
       }
     }
@@ -151,6 +149,9 @@ export default class FfXIVLogHandler extends LogHandler {
       case '37': // damage info (when the target actually takes damage)
         this.handleUnitDamageEvent(event);
         break;
+      case '01': // map change
+        this.handleMapChange(event);
+        break;
       case '02': // primary player
         this.handlePrimaryPlayer(event);
         break;
@@ -171,6 +172,13 @@ export default class FfXIVLogHandler extends LogHandler {
   private handlePrimaryPlayer(line: LogLineFFXIV) {
     console.log('Got YOU: ', line.line[3]);
     this.playerName = line.line[3];
+    this.cfg.set('playerName', this.playerName);
+  }
+
+  private handleMapChange(line: LogLineFFXIV) {
+    console.log('Map Change: ', line.line[3]);
+    this.zoneName = line.line[3];
+    this.cfg.set('zoneName', this.zoneName);
   }
 
   private updateMarkedRemoval() {
@@ -191,6 +199,7 @@ export default class FfXIVLogHandler extends LogHandler {
     if (!this.isInCombat && inActCombat == '1') {
       this.ennemyList.clear();
       this.isInCombat = true;
+      line.rawLine = this.zoneName;
       super.handleEncounterStartLine(line, Flavour.FFXIV);
       if (this.activity) this.activity.playerGUID = this.playerName;
     }
@@ -216,16 +225,16 @@ export default class FfXIVLogHandler extends LogHandler {
       const id = event.line[2];
       const owner = event.line[47];
 
-      if (owner != "00") {
-        console.info("owner detected, skipping");
+      if (owner != '00') {
+        console.info('owner detected, skipping');
         return;
       }
 
       let player = this.activity.getCombatant(entity);
       if (!player) {
         const storedPlayer = this.playerList.get(id);
-        if (storedPlayer) {
-          player = new Combatant(storedPlayer.name, storedPlayer.job);
+        if (this.isPlayer(id, owner)) {
+          player = new Combatant(entity, storedPlayer ? storedPlayer.job : "");
           console.log('Added combatant: ', entity);
           this.activity.addCombatant(player);
 
@@ -241,7 +250,7 @@ export default class FfXIVLogHandler extends LogHandler {
       }
     } else {
       if (this.activity.getPlayerCount() < 8) {
-        console.info("Force stopping, not 8 player content");
+        console.info('Force stopping, not 8 player content');
         this.forceEndActivity();
       }
 
@@ -257,32 +266,42 @@ export default class FfXIVLogHandler extends LogHandler {
       const targetCurrentHealth = event.line[24];
       const targetMaxHealth = event.line[25];
 
-      this.checkAddEnnemy(targetEntity, targetId, targetCurrentHealth, targetMaxHealth);
+      this.checkAddEnnemy(
+        targetEntity,
+        targetId,
+        targetCurrentHealth,
+        targetMaxHealth,
+      );
     }
   }
 
-  private checkAddEnnemy(entity: string, id: string, currentHealth: string , maxHealth: string) {
-    if (entity == "") return;
+  private checkAddEnnemy(
+    entity: string,
+    id: string,
+    currentHealth: string,
+    maxHealth: string,
+  ) {
+    if (entity == '') return;
     const ennemy = this.ennemyList.get(id);
     const player = this.activity?.getCombatant(entity);
 
     if (player) return;
 
-      if (!ennemy) {
-        console.log('Ennemy added: ', entity, id);
-        this.ennemyList.set(
-          id,
-          new Ennemy(entity, parseInt(currentHealth), parseInt(maxHealth), id),
-        );
-      } else {
-        let health = parseInt(currentHealth);
-        let maxHealthParsed = parseInt(maxHealth);
-        if (!Number.isNaN(health) && !Number.isNaN(maxHealth)) {
-          ennemy.health = health;
-          ennemy.maxHealth = maxHealthParsed;
-        }
-        ennemy.unMark();
+    if (!ennemy) {
+      console.log('Ennemy added: ', entity, id);
+      this.ennemyList.set(
+        id,
+        new Ennemy(entity, parseInt(currentHealth), parseInt(maxHealth), id),
+      );
+    } else {
+      let health = parseInt(currentHealth);
+      let maxHealthParsed = parseInt(maxHealth);
+      if (!Number.isNaN(health) && !Number.isNaN(maxHealth)) {
+        ennemy.health = health;
+        ennemy.maxHealth = maxHealthParsed;
       }
+      ennemy.unMark();
+    }
   }
 
   private handleUnitDamageEvent(event: LogLineFFXIV): void {

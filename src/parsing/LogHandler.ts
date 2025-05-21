@@ -76,8 +76,8 @@ export default abstract class LogHandler extends EventEmitter {
     let startDate;
     let encounterName;
 
-    startDate = new Date(Date.now());
-    encounterName = '';
+    startDate = new Date(new Date(event.line[1]).toISOString());
+    encounterName = event.rawLine;
 
     const activity = new RaidEncounter(
       startDate,
@@ -185,7 +185,7 @@ export default abstract class LogHandler extends EventEmitter {
 
     const playerName = event.line[3];
 
-    const deathDate = new Date(new Date(Date.now()).getTime() - 2000);
+    const deathDate = new Date(new Date(event.line[1]).toISOString());
     const activityStartDate = this.activity.startDate.getTime() / 1000;
     let relativeTime = deathDate.getTime() / 1000 - activityStartDate;
     if (relativeTime < 0) relativeTime = 0;

@@ -5,6 +5,8 @@ export type ConfigurationSchema = {
   bufferStoragePath: string;
   separateBufferPath: boolean;
   xivLogPath: string;
+  zoneName: string;
+  playerName: string;
   maxStorage: number;
   monitorIndex: number;
   selectedCategory: number;
@@ -121,6 +123,16 @@ export const configSchema = {
   },
   xivLogPath: {
     description: Phrase.XIVLogPathDescription,
+    type: 'string',
+    default: '',
+  },
+  playerName: {
+    description: Phrase.On,
+    type: 'string',
+    default: '',
+  },
+  zoneName: {
+    description: Phrase.On,
     type: 'string',
     default: '',
   },
