@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rescale video to fit scene on source callback from OBS rather than a timer.
 - Fix a bug where the process audio slider did not apply correctly.
 
+## [7.1.1] 2025-05-18
+### Changed
+- Player detection when dealing damage, now relies on ID instead of previously added unit
+
+### Fixed
+- Now can start a recording without changing map before
+- No more blank encounter name, the name will be the map name if a boss can't be found
+
 ## [7.1.0] 2025-05-18
 ### Changed
 - Changed the log watcher, now works without over plugin proxy, only act network file ready
