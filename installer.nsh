@@ -101,7 +101,7 @@
 
           # App likely running with elevated permissions.
           # Ask user to close it manually
-          ${if} $R1 > 1
+          ${if} $R1 > 3
             MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY loop
             Quit
           ${else}

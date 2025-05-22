@@ -176,7 +176,7 @@ export default class FfXIVLogHandler extends LogHandler {
         }
       }
     } else {
-      if (this.activity.getPlayerCount() < 1) {
+      if (this.activity.getPlayerCount() < 8) {
         console.info('Force stopping, not 8 player content');
         this.forceEndActivity();
       }
