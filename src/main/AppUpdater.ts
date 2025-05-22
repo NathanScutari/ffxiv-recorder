@@ -20,7 +20,8 @@ export default class AppUpdater {
 
     // If we find a new version on GitHub, inform the frontend.
     autoUpdater.on('update-downloaded', () => {
-      window.webContents.send('updateAvailable');
+      //window.webContents.send('updateAvailable');
+      autoUpdater.quitAndInstall();
     });
 
     // If the user accepted the update on the frontend, actually

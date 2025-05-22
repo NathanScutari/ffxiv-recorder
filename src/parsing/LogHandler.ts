@@ -167,7 +167,7 @@ export default abstract class LogHandler extends EventEmitter {
     }
 
     //Kill only if all ennemies in bosslist are dead
-    const result = bossList.every((boss) => boss.isDead);
+    const result = bossList.length > 0 && bossList.every((boss) => boss.isDead);
 
     if (result) {
       const overrun = this.cfg.get<number>('raidOverrun');
@@ -185,7 +185,7 @@ export default abstract class LogHandler extends EventEmitter {
 
     const playerName = event.line[3];
 
-    const deathDate = new Date(new Date(event.line[1]).toISOString());
+    const deathDate = new Date(new Date(event.line[1]).getTime() - 1000);
     const activityStartDate = this.activity.startDate.getTime() / 1000;
     let relativeTime = deathDate.getTime() / 1000 - activityStartDate;
     if (relativeTime < 0) relativeTime = 0;

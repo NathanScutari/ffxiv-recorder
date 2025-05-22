@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Changed
 
+## [7.2.1] 2025-05-18
+### Changed
+- Ennemy detection now based on ID and damage dealt by allies
+
+## [7.2.0] 2025-05-18
+### Added
+- Auto-update with new repo
+
+## [Fork-Original] 2025-05-18
 ### Added
 - Add audio source bars to the audio configuration panel.
 
