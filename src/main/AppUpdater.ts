@@ -20,15 +20,17 @@ export default class AppUpdater {
 
     // If we find a new version on GitHub, inform the frontend.
     autoUpdater.on('update-downloaded', () => {
-      //window.webContents.send('updateAvailable');
-      autoUpdater.quitAndInstall();
+      window.webContents.send('updateAvailable');
+      setTimeout(() => {
+        autoUpdater.quitAndInstall();
+      }, 10000);
     });
 
     // If the user accepted the update on the frontend, actually
     // do it.
     ipcMain.on('doAppUpdate', () => {
-      console.log('[AutoUpdater] User triggered auto-update');
-      autoUpdater.quitAndInstall();
+      console.log('[AutoUpdater] User (not) triggered auto-update');
+      //autoUpdater.quitAndInstall();
     });
 
     this.periodicallyCheckUpdate();
