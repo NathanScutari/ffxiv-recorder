@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Changed
 
+## [7.2.5] 2025-05-18
+### Fixed
+- Player count check correctly after 10s
+
 ## [7.2.1] 2025-05-18
 ### Changed
 - Ennemy detection now based on ID and damage dealt by allies
