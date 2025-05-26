@@ -68,6 +68,13 @@ export default abstract class LogHandler extends EventEmitter {
     this.videoProcessQueue = videoProcessQueue;
   }
 
+  protected formatTime(date: Date): string {
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${hours}:${minutes}:${seconds}`;
+  }
+
   protected async handleEncounterStartLine(
     event: LogLineFFXIV,
     flavour: Flavour,
@@ -76,7 +83,9 @@ export default abstract class LogHandler extends EventEmitter {
     let startDate;
     let encounterName;
 
-    startDate = new Date(new Date(event.line[1]).toISOString());
+    startDate = new Date(new Date(event.line[1]).getTime() - 3000);
+    console.info('fight start: ', this.formatTime(startDate));
+    console.info('recorder start: ', this.formatTime(this.recorder.startDate));
     encounterName = event.rawLine;
 
     const activity = new RaidEncounter(
@@ -112,10 +121,15 @@ export default abstract class LogHandler extends EventEmitter {
           : 0;
     }
 
-    console.info("Ennemies :", [...ennemyList.values()].length);
+    console.info('Ennemies :', [...ennemyList.values()].length);
     for (const ennemy of ennemyList.values()) {
       if (!Number.isNaN(ennemy.health) && !Number.isNaN(ennemy.maxHealth)) {
-        console.info("- ", ennemy.name, ennemy.id, Math.round(ennemy.maxHealth * 100 / sumOfEnnemyHealth))
+        console.info(
+          '- ',
+          ennemy.name,
+          ennemy.id,
+          Math.round((ennemy.maxHealth * 100) / sumOfEnnemyHealth),
+        );
       }
     }
 
@@ -185,7 +199,7 @@ export default abstract class LogHandler extends EventEmitter {
 
     const playerName = event.line[3];
 
-    const deathDate = new Date(new Date(event.line[1]).getTime() - 1000);
+    const deathDate = new Date(new Date(event.line[1]).getTime() - 3000);
     const activityStartDate = this.activity.startDate.getTime() / 1000;
     let relativeTime = deathDate.getTime() / 1000 - activityStartDate;
     if (relativeTime < 0) relativeTime = 0;

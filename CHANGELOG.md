@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Changed
 
-## [7.2.5] 2025-05-18
+## [7.3.0] 2025-05-27
+### Added
+- Offset between local system and server offset checks to be able to sync fight start and deaths as much as possible
+
+## [7.2.5] 2025-05-24
 ### Fixed
 - Player count check correctly after 10s
 

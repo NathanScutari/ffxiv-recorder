@@ -540,7 +540,8 @@ export default class VideoProcessQueue {
       target = 0;
     }
 
-    const rounded = await Math.round(target);
+    // const rounded = await Math.round(target);
+    const rounded = target;
     console.info('[VideoProcessQueue] Rounded start time', rounded);
     return rounded;
   }
