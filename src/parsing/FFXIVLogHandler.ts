@@ -22,6 +22,7 @@ export default class FfXIVLogHandler extends LogHandler {
 
   private offsetWatcher: ClockOffsetWatcher;
   private clockOffset: number;
+  private startTime: Date;
 
   constructor(
     mainWindow: BrowserWindow,
@@ -33,6 +34,7 @@ export default class FfXIVLogHandler extends LogHandler {
     this.clockOffset = 0;
     this.isInCombat = false;
     this.combatLogWatcher = new CombatLogWatcherFFXIV(xivLogPath, 15000);
+    this.startTime = new Date(Date.now());
 
     this.combatLogWatcher.on('LogLine', (event) => {
       if (this.isLogLine(event)) this.handleLogLine(event);
@@ -157,6 +159,7 @@ export default class FfXIVLogHandler extends LogHandler {
       this.ennemyList.clear();
       this.isInCombat = true;
       line.rawLine = this.zoneName;
+      this.startTime = new Date(Date.now());
       line.line[1] = new Date(new Date(line.line[1]).getTime() + this.clockOffset).toISOString();
       super.handleEncounterStartLine(line, Flavour.FFXIV);
       if (this.activity) this.activity.playerGUID = this.playerName;
@@ -198,7 +201,7 @@ export default class FfXIVLogHandler extends LogHandler {
     // On récupère les combattants que dans les 10 premières secondes, le temps de voir si il faut annuler la vidéo,
     // après on arrête de vérifier pour éviter du process inutile.
     if (
-      new Date(Date.now()).getTime() - this.activity.startDate.getTime() <
+      new Date(Date.now()).getTime() - this.startTime.getTime() <
       10000
     ) {
 
