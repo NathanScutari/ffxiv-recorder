@@ -240,6 +240,7 @@ type CloudSignedMetadata = CloudMetadata & {
 type RawCombatant = {
   _GUID?: string;
   _name?: string;
+  _jobName?: string;
   _teamID?: number;
   _specID?: number;
   _realm?: string;
