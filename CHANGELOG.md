@@ -6,6 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Changed
+### Added
+### Fixed
+- [Issue 650](https://github.com/aza547/wow-recorder/issues/650) - Fix an issue where outside players could appear in the Mythic+ roster. 
+
+## [6.14.0] - 2025-06-07
+### Changed
+- [Issue 519](https://github.com/aza547/wow-recorder/issues/519), [PR 676](https://github.com/aza547/wow-recorder/pull/676) - Use OBS's force stop functionality where we don't need a video file. 
+- Some style improvements to the video selection table.
+
+### Added
+- [Issue 678](https://github.com/aza547/wow-recorder/issues/678) - Add the ability to record/upload current the current raid tier encounters only.
+- Added an indicator to show how many videos are queued for upload download in addition to those currently in progress.
+
+### Fixed
+- [Issue 594](https://github.com/aza547/wow-recorder/issues/594) - Move the tag button to a more sensible place.
+
+## [6.13.3] - 2025-06-01
+### Added
+- Add a "hide empty categories" option.
+- [Issue 673](https://github.com/aza547/wow-recorder/issues/673) - Improve the delete dialog to allow individual videos to be deleted.
+- Add the ability to disable hardware acceleration in the app.
+
+### Fixed
+- Stop re-encoding the audio on cutting video.
+- [Issue 659](https://github.com/aza547/wow-recorder/issues/650) - Fix a bug where M+ without a boss pull would not record.
+- [Issue 671](https://github.com/aza547/wow-recorder/issues/671) - Fix a benign error popping up on installing visual C++ libs.
+- [Issue 672](https://github.com/aza547/wow-recorder/issues/672) - Fix a JavaScript error that could appear on quitting.
+
+## [6.13.2] - 2025-05-22
 
 ## [7.3.0] 2025-05-27
 ### Added
@@ -28,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add audio source bars to the audio configuration panel.
 
 ### Fixed
+- [Issue 663](https://github.com/aza547/wow-recorder/issues/663) - Fix a bug with ghost audio devices not being deselectable.
 - Rescale video to fit scene on source callback from OBS rather than a timer.
 - Fix a bug where the process audio slider did not apply correctly.
 

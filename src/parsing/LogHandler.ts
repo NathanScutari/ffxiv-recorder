@@ -65,6 +65,18 @@ export default abstract class LogHandler extends EventEmitter {
     this.mainWindow = mainWindow;
     this.recorder = recorder;
 
+    this.combatLogWatcher = new CombatLogWatcher(logPath, dataTimeout);
+    this.combatLogWatcher.watch();
+
+    this.combatLogWatcher.on('timeout', (ms: number) => {
+      this.dataTimeout(ms);
+    });
+
+    // For ease of testing force stop.
+    this.combatLogWatcher.on('WARCRAFT_RECORDER_FORCE_STOP', () => {
+      this.forceEndActivity();
+    });
+
     this.videoProcessQueue = videoProcessQueue;
   }
 
@@ -281,6 +293,11 @@ export default abstract class LogHandler extends EventEmitter {
       return;
     }
 
+    if (!videoFile) {
+      console.error('[LogHandler] OBS failed to produce a video file');
+      return;
+    }
+
     try {
       const activityStartTime = lastActivity.startDate.getTime();
       const bufferStartTime = startDate.getTime();
@@ -348,6 +365,11 @@ export default abstract class LogHandler extends EventEmitter {
     this.activity = undefined;
   }
 
+  public dropActivity() {
+    this.overrunning = false;
+    this.activity = undefined;
+  }
+
   protected async zoneChangeStop(line: LogLine) {
     if (!this.activity) {
       console.error('[LogHandler] No active activity on zone change stop');
@@ -383,6 +405,15 @@ export default abstract class LogHandler extends EventEmitter {
 
     const { category } = this.activity;
     return category === VideoCategory.Battlegrounds;
+  }
+
+  protected isMythicPlus() {
+    if (!this.activity) {
+      return false;
+    }
+
+    const { category } = this.activity;
+    return category === VideoCategory.MythicPlus;
   }
 
   protected processCombatant(

@@ -83,6 +83,7 @@ const CloudSettings = (props: IProps) => {
         cloudUploadDungeonMinLevel: config.cloudUploadDungeonMinLevel,
         cloudUploadClips: config.cloudUploadClips,
         chatOverlayOwnImage: config.chatOverlayOwnImage,
+        uploadCurrentRaidEncountersOnly: config.uploadCurrentRaidEncountersOnly,
       });
 
       // Inform the backend of a settings change so we can update config
@@ -111,6 +112,7 @@ const CloudSettings = (props: IProps) => {
     config.cloudUploadDungeonMinLevel,
     config.cloudUploadClips,
     config.chatOverlayOwnImage,
+    config.uploadCurrentRaidEncountersOnly,
   ]);
 
   const isComponentDisabled = () => {
@@ -702,21 +704,15 @@ const CloudSettings = (props: IProps) => {
     return (
       <div className="flex-col">
         <Label className="flex items-center">
-          Storage Usage
-          <Tooltip
-            content={getLocalePhrase(
-              appState.language,
-              configSchema.cloudUploadRateLimitMbps.description,
-            )}
-            side="top"
-          >
-            <Info size={20} className="inline-flex ml-2" />
-          </Tooltip>
+          {getLocalePhrase(appState.language, Phrase.CloudUsageDescription)}
         </Label>
 
         <div className="flex flex-row items-center justify-start w-1/3 min-w-80 max-w-120 gap-x-2">
           <Tooltip
-            content={getLocalePhrase(appState.language, Phrase.CloudUsage)}
+            content={getLocalePhrase(
+              appState.language,
+              Phrase.CloudUsageDescription,
+            )}
           >
             <Cloud size={24} className="text-foreground-lighter" />
           </Tooltip>

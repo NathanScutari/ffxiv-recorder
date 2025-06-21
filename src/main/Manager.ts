@@ -127,6 +127,8 @@ export default class Manager {
 
   private audioSettingsOpen = false;
 
+  private quitting = false;
+
   /**
    * Defined stages of configuration. They are named only for logging
    * purposes. Each stage holds the current state of the stages config,
@@ -228,23 +230,45 @@ export default class Manager {
    * invalid configuration requests to the Recorder class.
    */
   public async manage() {
-    if (this.active) {
-      if (!this.queued) {
-        console.info('[Manager] Queued a manage call');
-        this.queued = true;
-      }
+    if (this.active && !this.queued) {
+      console.info('[Manager] Queued an additional manage');
+      this.queued = true;
+    }
 
+    if (this.active) {
+      console.info('[Manager] Manage already in progress');
       return;
     }
 
+    // Mark ourselves as active, indicating we are in the middle
+    // of a reconfiguration.
     this.active = true;
+
+    // Stop the poller. We don't want to be polling WoW while we are
+    // reconfiguring as we might get a signal that triggers a recorder
+    // action at a time where we can't handle it.
+    this.poller.removeAllListeners();
+    this.poller.reset();
+
+    // Now actually call the internal manage function which will loop through
+    // the stages, validate and configure them.
     await this.internalManage();
 
     if (this.queued) {
+      // Another call to manage was queued while we were reconfiguring. Re-run
+      // it to ensure we have the latest config.
       console.info('[Manager] Execute a queued manage call');
       this.queued = false;
       await this.internalManage();
     }
+
+    // If we got here then the config is valid. Start the poller so we
+    // will react to the state of WoW. This will start the recorder if
+    // WoW is already running.
+    this.poller
+      .on('wowProcessStart', () => this.onWowStarted())
+      .on('wowProcessStop', () => this.onWowStopped())
+      .start();
 
     this.active = false;
   }
@@ -263,6 +287,25 @@ export default class Manager {
 
     if (this.xivLogHandler && this.xivLogHandler.activity) {
       await this.xivLogHandler.forceEndActivity();
+    }
+  }
+
+  /**
+   * Immediately drop any in-progress activity.
+   */
+  public dropActivity() {
+    if (this.retailLogHandler && this.retailLogHandler.activity) {
+      console.info('[Manager] Dropping retail activity');
+      this.retailLogHandler.dropActivity();
+    }
+
+    if (this.retailPtrLogHandler && this.retailPtrLogHandler.activity) {
+      console.info('[Manager] Dropping ptr activity');
+      this.retailPtrLogHandler.dropActivity();
+    }
+
+    if (this.xivLogHandler && this.xivLogHandler.activity) {
+      this.xivLogHandler.dropActivity();
     }
   }
 
@@ -522,7 +565,7 @@ export default class Manager {
    */
   private async onXIVStopped() {
     console.info(
-      '[Manager] Detected FFXIV not running, or Windows going inactive',
+      '[Manager] Detected FFXIV not running',
     );
 
     if (this.retailLogHandler && this.retailLogHandler.activity) {
@@ -532,7 +575,8 @@ export default class Manager {
     } else if (this.xivLogHandler && this.xivLogHandler.activity) {
       await this.xivLogHandler.forceEndActivity();
     } else {
-      await this.recorder.stop();
+      // No activity so we can just force stop.
+      await this.recorder.forceStop();
     }
 
     this.recorder.clearFindWindowInterval();
@@ -548,13 +592,13 @@ export default class Manager {
    * Configure the base OBS config. We need to stop the recording to do this.
    */
   private async configureObsBase(config: ObsBaseConfig) {
-    await this.recorder.stop();
+    // Force stop as we don't care about the output video.
+    await this.recorder.forceStop();
 
     await this.refreshCloudStatus();
     await this.refreshDiskStatus();
 
     await this.recorder.configureBase(config);
-    this.poller.start();
     this.mainWindow.webContents.send('refreshState');
   }
 
@@ -619,9 +663,14 @@ export default class Manager {
    * Configure audio settings in OBS. This can all be changed live.
    */
   private configureObsAudio(config: ObsAudioConfig) {
-    if (this.poller.isXIVRunning) {
-      this.recorder.configureAudioSources(config);
+    const shouldConfigure = this.poller.isXIVRunning || this.audioSettingsOpen;
+
+    if (!shouldConfigure) {
+      console.info("Won't configure audio sources, FFXIV not running");
+      return;
     }
+
+    this.recorder.configureAudioSources(config);
   }
 
   /**
@@ -631,8 +680,9 @@ export default class Manager {
     if (this.recorder.obsState === ERecordingState.Recording) {
       // We can't change this config if OBS is recording. If OBS is recording
       // but isRecording is false, that means it's a buffer recording. Stop it
-      // briefly to change the config.
-      await this.recorder.stop();
+      // briefly to change the config. Force stop as we don't care about the
+      // output video.
+      await this.recorder.forceStop();
     }
 
     if (this.retailLogHandler) {
@@ -708,7 +758,6 @@ export default class Manager {
     }
 
     this.poller.reconfigureFlavour(config);
-    this.poller.start();
   }
 
   /**
@@ -748,10 +797,14 @@ export default class Manager {
     let winner;
 
     try {
-      winner = await Promise.race([
-        CloudClient.getUserAffiliations(cloudAccountName, cloudAccountPassword),
-        getPromiseBomb(10000, 'Authentication timed out'),
-      ]);
+      const bomb = getPromiseBomb(10, 'Authentication timed out');
+
+      const affs = CloudClient.getUserAffiliations(
+        cloudAccountName,
+        cloudAccountPassword,
+      );
+
+      winner = await Promise.race([affs, bomb]);
     } catch (error) {
       console.warn('[Manager] Cloud validation failed', String(error));
 
@@ -858,7 +911,6 @@ export default class Manager {
         '[Manager] Validation failed, obsPath does not exist',
         obsPath,
       );
-
       throw new Error(this.getLocaleError(Phrase.ErrorBufferPathInvalid));
     }
 
@@ -1244,22 +1296,27 @@ export default class Manager {
       console.info('[Manager] Running before-quit actions');
       this.poller.reset();
       uIOhook.stop();
-
-      // This takes a few seconds and is synchronous so do it last.
       this.recorder.shutdownOBS();
     });
 
-    // If Windows is going to sleep, we don't want to confuse OBS. Stop the
-    // recording as if WoW has been closed, and resume it once Windows has
-    // resumed.
-    powerMonitor.on('suspend', () => {
+    // If Windows is going to sleep, we don't want to confuse OBS. It would be
+    // unusual for someone to sleep windows while WoW is open AND while in an
+    // activity, all we can do is drop the activity and stop the recorder.
+    powerMonitor.on('suspend', async () => {
       console.info('[Manager] Detected Windows is going to sleep.');
-      this.onXIVStopped();
+      this.dropActivity();
+      this.poller.reset();
+      await this.recorder.forceStop();
     });
 
-    powerMonitor.on('resume', () => {
+    powerMonitor.on('resume', async () => {
       console.info('[Manager] Detected Windows waking up from a sleep.');
-      this.poller.start();
+      await this.recorder.forceStop();
+
+      this.poller
+        .on('wowProcessStart', () => this.onWowStarted())
+        .on('wowProcessStop', () => this.onWowStopped())
+        .start();
     });
   }
 
@@ -1340,7 +1397,9 @@ export default class Manager {
     }
 
     console.info('[Manager] Restart recorder');
-    await this.recorder.stop();
+
+    // Use force stop here as we don't care about the output file.
+    await this.recorder.forceStop();
     await this.recorder.cleanup();
     await this.recorder.start();
   }

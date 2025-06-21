@@ -3,6 +3,7 @@ import { BrowserWindow } from 'electron';
 import Combatant from '../main/Combatant';
 
 import {
+  currentRetailEncounters,
   dungeonEncounters,
   dungeonsByMapId,
   dungeonTimersByMapId,
@@ -26,6 +27,7 @@ import { Flavour } from '../main/types';
 import SoloShuffle from '../activitys/SoloShuffle';
 import LogLine from './LogLine';
 import { VideoCategory } from '../types/VideoCategory';
+import { isUnitSelf } from './logutils';
 
 /**
  * RetailLogHandler class.
@@ -276,6 +278,15 @@ export default class RetailLogHandler extends LogHandler {
         return;
       }
 
+      const currentRaidOnly = this.cfg.get<boolean>(
+        'recordCurrentRaidEncountersOnly',
+      );
+
+      if (currentRaidOnly && !currentRetailEncounters.includes(encounterID)) {
+        console.warn('[RetailLogHandler] Not a current encounter');
+        return;
+      }
+
       const logDifficultyID = parseInt(line.arg(3), 10);
       const { difficultyID } = instanceDifficulty[logDifficultyID];
       const orderedDifficulty = ['lfr', 'normal', 'heroic', 'mythic'];
@@ -463,12 +474,13 @@ export default class RetailLogHandler extends LogHandler {
     const srcFlags = parseInt(line.arg(3), 16);
     const srcNameRealm = line.arg(2);
 
-    this.processCombatant(
-      srcGUID,
-      srcNameRealm,
-      srcFlags,
-      this.isBattleground(),
-    );
+    // The isUnitSelf() check is important here as for M+ we won't see
+    // COMBATANT_INFO events till the boss is pulled, which would cause
+    // us to drop the recording on an abandoned key with no boss pulls.
+    // Adding the combatant here if it's ourselves ensures we atleast
+    // have a partially defined combatant. See issue 650 & 683.
+    const allowNew = this.isBattleground() || isUnitSelf(srcFlags);
+    this.processCombatant(srcGUID, srcNameRealm, srcFlags, allowNew);
   }
 
   private handleSpellCastSuccess(line: LogLine) {
@@ -480,11 +492,18 @@ export default class RetailLogHandler extends LogHandler {
     const srcNameRealm = line.arg(2);
     const srcFlags = parseInt(line.arg(3), 16);
 
+    // The isUnitSelf() check is important here as for M+ we won't see
+    // COMBATANT_INFO events till the boss is pulled, which would cause
+    // us to drop the recording on an abandoned key with no boss pulls.
+    // Adding the combatant here if it's ourselves ensures we atleast
+    // have a partially defined combatant. See issue 650 & 683.
+    const allowNew = this.isBattleground() || isUnitSelf(srcFlags);
+
     const combatant = this.processCombatant(
       srcGUID,
       srcNameRealm,
       srcFlags,
-      this.isBattleground(),
+      allowNew,
     );
 
     if (

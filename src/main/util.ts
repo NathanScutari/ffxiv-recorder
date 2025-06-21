@@ -623,8 +623,15 @@ const nextMousePressPromise = (): Promise<PTTKeyPressEvent> => {
   });
 };
 
+/**
+ * Returns a promise that will reject after a given fuse time. Also provides
+ * handlers to pause the timer, and also to reset the timer to the initial
+ * fuse.
+ */
 const getPromiseBomb = (fuse: number, reason: string) => {
-  return new Promise((_resolve, reject) => setTimeout(reject, fuse, reason));
+  return new Promise((resolve, reject) => {
+    setTimeout(() => reject(reason), fuse * 1000);
+  });
 };
 
 const buildClipMetadata = (initial: Metadata, duration: number, date: Date) => {

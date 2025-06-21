@@ -78,6 +78,10 @@ export type ConfigurationSchema = {
   cloudUploadDungeonMinLevel: number;
   cloudUploadClips: boolean;
   language: string;
+  hideEmptyCategories: boolean;
+  hardwareAcceleration: boolean;
+  recordCurrentRaidEncountersOnly: boolean;
+  uploadCurrentRaidEncountersOnly: boolean;
 };
 
 export type ConfigurationSchemaKey = keyof ConfigurationSchema;
@@ -520,5 +524,25 @@ export const configSchema = {
     description: Phrase.LanguageDescription,
     type: 'string',
     default: 'English',
+  },
+  hideEmptyCategories: {
+    description: Phrase.HideEmptyCategoriesDescription,
+    type: 'boolean',
+    default: false,
+  },
+  hardwareAcceleration: {
+    description: Phrase.HardwareAccelerationDescription,
+    type: 'boolean',
+    default: true,
+  },
+  recordCurrentRaidEncountersOnly: {
+    description: Phrase.RecordCurrentRaidsOnlyDescription,
+    type: 'boolean',
+    default: false,
+  },
+  uploadCurrentRaidEncountersOnly: {
+    description: Phrase.UploadCurrentRaidsOnlyDescription,
+    type: 'boolean',
+    default: false,
   },
 };

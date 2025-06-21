@@ -111,9 +111,10 @@ export default class Poller extends EventEmitter {
         this.isXIVRunning = false;
         this.emit('xivProcessStop');
       }
-    } catch (error) {
-      // Think we can hit this on sleeping/resuming from sleep.
-      console.warn('Failed parsing JSON from rust-ps:', error, data);
+    } catch {
+      // We can hit this on sleeping/resuming from sleep. Or anything
+      // else that blocks the event loop long enough to cause us to end up
+      // with more than one JSON entry.
     }
   };
 

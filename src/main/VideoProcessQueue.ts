@@ -179,8 +179,12 @@ export default class VideoProcessQueue {
       return;
     }
 
+    console.log('[VideoProcessQueue] Queuing video for upload', item.path);
     this.inProgressUploads.push(item.path);
     this.uploadQueue.write(item);
+
+    const queued = Math.max(0, this.inProgressUploads.length);
+    this.mainWindow.webContents.send('updateUploadQueueLength', queued);
   };
 
   /**
@@ -195,8 +199,12 @@ export default class VideoProcessQueue {
       return;
     }
 
+    console.log('[VideoProcessQueue] Queuing video for download', videoName);
     this.inProgressDownloads.push(videoName);
     this.downloadQueue.write(video);
+
+    const queued = Math.max(0, this.inProgressDownloads.length);
+    this.mainWindow.webContents.send('updateDownloadQueueLength', queued);
   };
 
   /**
@@ -406,7 +414,10 @@ export default class VideoProcessQueue {
    */
   private startedUploadingVideo(item: UploadQueueItem) {
     console.info('[VideoProcessQueue] Now uploading video', item.path);
+    const queued = Math.max(0, this.inProgressUploads.length);
     this.mainWindow.webContents.send('updateUploadProgress', 0);
+    this.mainWindow.webContents.send('updateUploadQueueLength', queued);
+    this.mainWindow.webContents.send('refreshState');
   }
 
   /**
@@ -419,6 +430,10 @@ export default class VideoProcessQueue {
     this.inProgressUploads = this.inProgressUploads.filter(
       (p) => p !== item.path,
     );
+
+    const queued = Math.max(0, this.inProgressUploads.length);
+    this.mainWindow.webContents.send('updateUploadQueueLength', queued);
+    this.mainWindow.webContents.send('refreshState');
   }
 
   /**
@@ -427,7 +442,10 @@ export default class VideoProcessQueue {
   private startedDownloadingVideo(video: RendererVideo) {
     const { videoName } = video;
     console.info('[VideoProcessQueue] Now downloading video', videoName);
+    const queued = Math.max(0, this.inProgressDownloads.length);
     this.mainWindow.webContents.send('updateDownloadProgress', 0);
+    this.mainWindow.webContents.send('updateDownloadQueueLength', queued);
+    this.mainWindow.webContents.send('refreshState');
   }
 
   /**
@@ -436,11 +454,14 @@ export default class VideoProcessQueue {
   private finishDownloadingVideo(video: RendererVideo) {
     const { videoName } = video;
     console.info('[VideoProcessQueue] Finished downloading video', videoName);
-    this.mainWindow.webContents.send('refreshState');
 
     this.inProgressDownloads = this.inProgressDownloads.filter(
       (p) => p !== videoName,
     );
+
+    const queued = Math.max(0, this.inProgressDownloads.length);
+    this.mainWindow.webContents.send('refreshState');
+    this.mainWindow.webContents.send('updateDownloadQueueLength', queued);
   }
 
   /**
@@ -516,28 +537,12 @@ export default class VideoProcessQueue {
   }
 
   /**
-   * Compute the best start time to cut from. This avoids any attempt to cut from a
-   * negative number (which is obviously nonsense) and also rounds to the nearest
-   * keyframe, which should be at one second intervals (see "Reckeyint_sec").
-   *
-   * I did experiment with using ffprobe to find the nearest keyframe, but that
-   * had a few downsides:
-   * - It took a while to ffprobe big files, seemed about 1s per minute on my PC.
-   * - AV1 which has loads more keyframes may overflow the stdout limits (1MB).
-   *
-   * So now we just assume there is a keyframe at 1s intervals, which is what
-   * we configured OBS to do. If it does something else, then we might get a
-   * bit of an offset but whatever.
-   *
-   * @param target start time (sec)
-   * @returns keyframe aligned start time
+   * Avoid trying to start from a negative start time, which is obviously nonsense.
    */
   private static async getStartTime(target: number) {
-    console.info('[VideoProcessQueue] Target start time:', target);
-
     if (target < 0) {
       console.warn('[VideoProcessQueue] Rejecting negative start time', target);
-      target = 0;
+      return 0;
     }
 
     // const rounded = await Math.round(target);
@@ -548,17 +553,6 @@ export default class VideoProcessQueue {
 
   /**
    * Cut the video to size using ffmpeg.
-   *
-   * It's crucial that we don't re-encode the video here as that
-   * would spin the CPU and delay the replay being available.
-   *
-   * Despite the above, we do re-encode the audio, it's cheap enough
-   * we can get away with it and if we don't we get negative time stamps
-   * in the stream which cause audio sync issues on seeking.
-   *
-   * Previously there was an "-avoid_negative_ts make_zero" option here
-   * which alowed us to avoid the audio re-encoding but that caused the video
-   * to be extended slightly.
    */
   private async cutVideo(
     srcFile: string,
@@ -580,8 +574,14 @@ export default class VideoProcessQueue {
     const fn = ffmpeg(srcFile)
       .setStartTime(start)
       .setDuration(duration)
+      // Crucially we copy the video and audio, so we don't do any
+      // re-encoding which would take time and CPU.
       .withVideoCodec('copy')
-      .withAudioCodec('aac')
+      .withAudioCodec('copy')
+      // Avoid any negative timestamps, which can cause issues with
+      // some players, but does extend the video slightly depending on
+      // the keyframe alignment.
+      .outputOptions('-avoid_negative_ts make_zero')
       .output(outputPath);
 
     console.time('[VideoProcessQueue] Video cut took:');

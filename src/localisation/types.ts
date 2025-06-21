@@ -286,8 +286,8 @@ enum Phrase {
   ShareableLinkText,
   ShareableLinkFailedTitle,
   ShareableLinkFailedText,
-  CloudUsage,
-  DiskUsage,
+  CloudUsageDescription,
+  DiskUsageDescription,
   Hardware,
   Software,
   All,
@@ -417,6 +417,14 @@ enum Phrase {
   SelectProcess,
   AudioProcessDevicesDescription,
   ProcessVolumeDescription,
+  HideEmptyCategoriesLabel,
+  HideEmptyCategoriesDescription,
+  HardwareAccelerationLabel,
+  HardwareAccelerationDescription,
+  RecordCurrentRaidsOnlyLabel,
+  RecordCurrentRaidsOnlyDescription,
+  UploadCurrentRaidsOnlyLabel,
+  UploadCurrentRaidsOnlyDescription,
 }
 
 enum Language {

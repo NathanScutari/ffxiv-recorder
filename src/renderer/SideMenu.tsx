@@ -17,7 +17,6 @@ import {
   MicStatus,
   Pages,
   RecStatus,
-  RendererVideo,
   SaveStatus,
 } from 'main/types';
 import { MutableRefObject, useEffect, useState } from 'react';
@@ -29,7 +28,7 @@ import {
 } from 'localisation/translations';
 import { VideoCategory } from '../types/VideoCategory';
 import { setConfigValue } from './useSettings';
-import { getCategoryIndex, getVideoCategoryFilter } from './rendererutils';
+import { getCategoryIndex } from './rendererutils';
 import Menu from './components/Menu';
 import Separator from './components/Separator/Separator';
 import LogsButton from './LogButton';
@@ -41,7 +40,7 @@ import UpdateNotifier from './containers/UpdateNotifier/UpdateNotifier';
 
 interface IProps {
   recorderStatus: RecStatus;
-  videoState: RendererVideo[];
+  videoCounters: Record<VideoCategory, number>;
   appState: AppState;
   setAppState: React.Dispatch<React.SetStateAction<AppState>>;
   persistentProgress: MutableRefObject<number>;
@@ -56,7 +55,7 @@ interface IProps {
 const SideMenu = (props: IProps) => {
   const {
     recorderStatus,
-    videoState,
+    videoCounters,
     appState,
     setAppState,
     persistentProgress,
@@ -83,9 +82,16 @@ const SideMenu = (props: IProps) => {
     tabCategory: VideoCategory,
     tabIcon: string | React.ReactNode,
   ) => {
-    const categoryFilter = getVideoCategoryFilter(tabCategory);
-    const categoryState = videoState.filter(categoryFilter);
-    const numVideos = categoryState.length;
+    const numTotalVideos = Object.values(videoCounters).reduce((t, v) => t + v);
+    const numCategoryVideos = videoCounters[tabCategory];
+
+    if (
+      config.hideEmptyCategories && // Hide empty categories is enabled.
+      numTotalVideos > 0 && // Only hide categories if there are atleast some videos.
+      numCategoryVideos < 1 // If this category has no videos, so hide it.
+    ) {
+      return <></>;
+    }
 
     return (
       <Menu.Item value={tabCategory}>
@@ -103,7 +109,7 @@ const SideMenu = (props: IProps) => {
           )}
         </Menu.Item.Icon>
         {getLocaleCategoryLabel(appState.language, tabCategory)}
-        <Menu.Item.Badge value={numVideos} />
+        <Menu.Item.Badge value={numCategoryVideos} />
       </Menu.Item>
     );
   };
