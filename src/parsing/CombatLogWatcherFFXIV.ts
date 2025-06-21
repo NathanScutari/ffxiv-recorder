@@ -83,7 +83,7 @@ export default class CombatLogWatcherFFXIV extends EventEmitter {
     this.watcher = chokidar.watch(path.join(this.logDir, 'Network_*'), {
       ignoreInitial: true,
       usePolling: true,
-      interval: 200
+      interval: 20
     });
 
     this.watcher

@@ -60,6 +60,7 @@ export default class FfXIVLogHandler extends LogHandler {
 
   public dispose() {
     this.combatLogWatcher.unwatch();
+    this.offsetWatcher.stop();
   }
 
   private isLogLine(event: any): event is LogLineFFXIV {
@@ -160,7 +161,7 @@ export default class FfXIVLogHandler extends LogHandler {
       this.isInCombat = true;
       line.rawLine = this.zoneName;
       this.startTime = new Date(Date.now());
-      line.line[1] = new Date(new Date(line.line[1]).getTime() + this.clockOffset).toISOString();
+      line.line[1] = this.startTime.toISOString();//new Date(new Date(line.line[1]).getTime() + this.clockOffset).toISOString();
       super.handleEncounterStartLine(line, Flavour.FFXIV);
       if (this.activity) this.activity.playerGUID = this.playerName;
     }
@@ -210,7 +211,7 @@ export default class FfXIVLogHandler extends LogHandler {
       const owner = event.line[47];
       this.checkForCombatant(entity, id, owner);
     } else {
-      if (this.activity.getPlayerCount() < 1) {
+      if (this.activity.getPlayerCount() < 8) {
         console.info('Force stopping, not 8 player content');
         this.forceEndActivity();
       }
@@ -303,7 +304,7 @@ export default class FfXIVLogHandler extends LogHandler {
     const entityName = event.line[3];
     const id = event.line[2];
     const player = this.activity.getCombatant(entityName);
-    event.line[1] = new Date(new Date(event.line[1]).getTime() + this.clockOffset).toISOString();
+    event.line[1] = new Date(Date.now()).toISOString();//new Date(new Date(event.line[1]).getTime() + this.clockOffset).toISOString();
 
     if (player) {
       super.handleUnitDiedLine(event);
