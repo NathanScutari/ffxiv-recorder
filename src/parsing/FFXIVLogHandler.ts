@@ -210,7 +210,7 @@ export default class FfXIVLogHandler extends LogHandler {
       const owner = event.line[47];
       this.checkForCombatant(entity, id, owner);
     } else {
-      if (this.activity.getPlayerCount() < 8) {
+      if (this.activity.getPlayerCount() < 1) {
         console.info('Force stopping, not 8 player content');
         this.forceEndActivity();
       }

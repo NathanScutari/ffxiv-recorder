@@ -147,9 +147,10 @@ export default class Recorder extends EventEmitter {
   private dummyGameCaptureSource: IInput;
 
   /**
-   * The dummy process audio capture source.
+   * The image source to be used for the overlay, we create this
+   * ahead of time regardless of if the user has the overlay enabled.
    */
-  private dummyProcessAudioSource: IInput;
+  private overlayImageSource: IInput;
 
   /**
    * Timer for latching onto a window for either game capture or
@@ -173,12 +174,6 @@ export default class Recorder extends EventEmitter {
    * The maximum number of attempts to find a window to capture.
    */
   private findWindowAttemptLimit = 10;
-
-  /**
-   * The image source to be used for the overlay, we create this
-   * ahead of time regardless of if the user has the overlay enabled.
-   */
-  private overlayImageSource: IInput;
 
   /**
    * Resolution selected by the user in settings. Defaults to 1920x1080 for
@@ -318,7 +313,7 @@ export default class Recorder extends EventEmitter {
   /**
    * The last file output by OBS.
    */
-  public lastFile: string = '';
+  public lastFile: string | null = null;
 
   /**
    * The video context.
@@ -342,6 +337,9 @@ export default class Recorder extends EventEmitter {
     colorspace: EColorSpace.CS709 as unknown as osn.EColorSpace,
     scaleType: EScaleType.Bicubic as unknown as osn.EScaleType,
     fpsType: EFPSType.Fractional as unknown as osn.EFPSType,
+
+    // The AMD encoder causes recordings to get much darker if using the full
+    // color range setting. So swap that to partial here. See Issue 446.
     range: ERangeType.Partial as unknown as osn.ERangeType,
   };
 
@@ -394,14 +392,6 @@ export default class Recorder extends EventEmitter {
       'WCR Chat Overlay',
       { file: getAssetPath('poster', 'chat-cover.png') },
     );
-
-    // Provides us with a mechanism to get a list of available processes to
-    // expose in the UI. We won't ever use this source.
-    this.dummyProcessAudioSource = osn.InputFactory.create(
-      TAudioSourceType.process,
-      'WCR Dummy Process Audio Source',
-    );
-    this.dummyProcessAudioSource.enabled = false;
 
     // Connects the signal handler, we get feedback from OBS by way of
     // signals, so this is how we know it's doing the right thing after
@@ -496,6 +486,34 @@ export default class Recorder extends EventEmitter {
   }
 
   /**
+   * Force stop OBS. This drops the current recording and stops OBS. The
+   * resulting MP4 may be malformed should not be used.
+   */
+  public async forceStop() {
+    console.info('[Recorder] Queued force stop');
+    const { resolveHelper, rejectHelper, promise } = deferredPromiseHelper();
+
+    this.actionQueue.enqueue(async () => {
+      try {
+        await this.forceStopOBS();
+        resolveHelper(null);
+      } catch (error) {
+        console.error('[Recorder] Crash on force stop call', String(error));
+
+        const crashData: CrashData = {
+          date: new Date(),
+          reason: String(error),
+        };
+
+        this.emit('crash', crashData);
+        rejectHelper(error);
+      }
+    });
+
+    await promise;
+  }
+
+  /**
    * Configures OBS. This does a bunch of things that we need the
    * user to have setup their config for, which is why it's split out.
    */
@@ -533,7 +551,22 @@ export default class Recorder extends EventEmitter {
       range: ERangeType.Partial as unknown as osn.ERangeType,
     };
 
-    this.context.video = videoInfo;
+    if (
+      videoInfo.fpsNum !== this.context.video.fpsNum ||
+      videoInfo.baseWidth !== this.context.video.baseWidth ||
+      videoInfo.baseHeight !== this.context.video.baseHeight ||
+      videoInfo.outputWidth !== this.context.video.outputWidth ||
+      videoInfo.outputHeight !== this.context.video.outputHeight
+    ) {
+      // There are dragons here. This looks simple but it's not and I think
+      // assigning this context is the source of a bug where we can timeout
+      // on reconfiguring. I spent ages trying to solve it in June 2025 but
+      // gave up in. Cowardly only assign it if something has changed to avoid
+      // any risk in the case where nothing has changed.
+      console.info('[Recorder] Reconfigure OBS video context');
+      this.context.video = videoInfo;
+    }
+
     const outputPath = path.normalize(this.obsPath);
 
     Recorder.applySetting('Output', 'Mode', 'Advanced');
@@ -546,7 +579,7 @@ export default class Recorder extends EventEmitter {
     //   - This is part of the strategy to avoid re-encoding the videos while
     //     enabling a reasonable cutting accuracy.
     //   - We won't ever be off by more than 0.5 sec with this approach, which
-    //     I think is an acceptable error .
+    //     I think is an acceptable error.
     //   - Obviously this is a trade off in file size, where the default keyframe
     //     interval appears to be around 4s.
     Recorder.applySetting('Output', 'Reckeyint_sec', 1);
@@ -984,6 +1017,9 @@ export default class Recorder extends EventEmitter {
       return;
     }
 
+    // Important to avoid us trying to restart OBS while shutting down / quitting.
+    this.obsState = ERecordingState.Offline;
+
     this.clearFindWindowInterval();
 
     [
@@ -1001,6 +1037,8 @@ export default class Recorder extends EventEmitter {
       queue.empty();
       queue.clearListeners();
     });
+
+    this.context.destroy();
 
     try {
       osn.NodeObs.InitShutdownSequence();
@@ -1060,17 +1098,10 @@ export default class Recorder extends EventEmitter {
       throw new Error('[Recorder] OBS not initialized');
     }
 
-    // The source properties are cached by OSN, so update an irrelevant
-    // setting to force a refresh. This refreshes the window list within
-    // the properties object.
-    //
-    // This relies on some internals of OSN which update the cache to
-    // refresh on calling the update function. See "osn::ISource::Update"
-    // in isource.cpp for more details.
-    const src = this.dummyProcessAudioSource;
-    const { settings } = src;
-    settings.refresh = uuidv4();
-    src.update(settings);
+    const src = osn.InputFactory.create(
+      TAudioSourceType.process,
+      'WCR Dummy Process Audio Source',
+    );
 
     let prop = src.properties.first();
 
@@ -1081,9 +1112,14 @@ export default class Recorder extends EventEmitter {
     const windows = [];
 
     if (prop.name === 'window' && Recorder.isObsListProperty(prop)) {
-      windows.push(...prop.details.items);
+      const unique = Array.from(
+        new Map(prop.details.items.map((item) => [item.value, item])).values(),
+      );
+
+      windows.push(...unique);
     }
 
+    src.release();
     return windows;
   }
 
@@ -1191,13 +1227,13 @@ export default class Recorder extends EventEmitter {
 
     // Sleep for a second, without this sometimes OBS does not respond at all.
     await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    this.startQueue.empty();
     osn.NodeObs.OBS_service_startRecording();
 
-    // Wait up to 30 seconds for OBS to signal it has started recording,
-    // really this shouldn't take nearly as long.
     await Promise.race([
       this.startQueue.shift(),
-      getPromiseBomb(30000, 'OBS timeout waiting for start'),
+      getPromiseBomb(30, 'OBS timeout waiting for start'),
     ]);
 
     this.startQueue.empty();
@@ -1225,19 +1261,49 @@ export default class Recorder extends EventEmitter {
       return;
     }
 
+    this.wroteQueue.empty();
     osn.NodeObs.OBS_service_stopRecording();
+    const wrote = this.wroteQueue.shift();
 
-    // Wait up to 60 seconds for OBS to signal it has wrote the file, really
-    // this shouldn't take nearly as long as this but we're generous to account
-    // for slow HDDs etc.
-    await Promise.race([
-      this.wroteQueue.shift(),
-      getPromiseBomb(60000, '[Recorder] OBS timeout waiting for video file'),
-    ]);
+    try {
+      await Promise.race([wrote, getPromiseBomb(60, 'OBS timeout on stop')]);
+      this.lastFile = osn.NodeObs.OBS_service_getLastRecording();
+      console.info('[Recorder] Set last file:', this.lastFile);
+    } catch (error) {
+      console.error('[Recorder] Error stopping OBS', error);
+      await this.forceStopOBS(wrote);
+    }
+  }
+
+  /**
+   * Force stop OBS, no-op if already stopped. Optionally pass in a wrote
+   * promise to await instead of shifting from the queue ourselves. That's
+   * useful in the case we've failed to stop and are now force stopping.
+   */
+  private async forceStopOBS(
+    wrote: Promise<osn.EOutputSignal> | undefined = undefined,
+  ) {
+    console.info('[Recorder] Force stop');
+
+    if (!this.obsInitialized) {
+      console.error('[Recorder] OBS not initialized');
+      throw new Error('OBS not initialized');
+    }
+
+    if (this.obsState === ERecordingState.Offline) {
+      console.info('[Recorder] Already stopped');
+      return;
+    }
 
     this.wroteQueue.empty();
-    this.lastFile = osn.NodeObs.OBS_service_getLastRecording();
-    console.info('[Recorder] Got last file from OBS:', this.lastFile);
+    osn.NodeObs.OBS_service_stopRecordingForce();
+
+    // If we were passed a wrote promise, use that instead of shifting from
+    // the queue as a previously created promise will get the result first.
+    wrote = wrote || this.wroteQueue.shift();
+    const bomb = getPromiseBomb(3, 'OBS timeout on force stop');
+    await Promise.race([wrote, bomb]);
+    this.lastFile = null;
   }
 
   /**
@@ -1371,7 +1437,7 @@ export default class Recorder extends EventEmitter {
    * Handle a source callback from OBS.
    */
   private handleSourceCallback(data: ObsSourceCallbackInfo[]) {
-    console.info('[Recorder] Got source callback:', data);
+    //console.info('[Recorder] Got source callback:', data);
     this.scaleVideoSourceSize();
   }
 
@@ -1822,7 +1888,13 @@ export default class Recorder extends EventEmitter {
       this.findWindowAttempts,
     );
 
-    const window = Recorder.findWowWindow(this.dummyGameCaptureSource);
+    let window = undefined;
+
+    try {
+      window = Recorder.findWowWindow(this.dummyGameCaptureSource);
+    } catch (ex) {
+      console.error('[Recorder] Exception when trying to find window:', ex);
+    }
 
     if (!window) {
       console.info('[Recorder] Game capture window not found, will retry');

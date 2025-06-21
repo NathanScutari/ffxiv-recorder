@@ -285,8 +285,8 @@ const KOREAN: Translations = {
   [Phrase.ShareableLinkText]: '이 링크는 동영상이 클라우드에 저장되어 있는 동안 유효합니다.',
   [Phrase.ShareableLinkFailedTitle]: '링크 생성에 실패했습니다.',
   [Phrase.ShareableLinkFailedText]: '다시 시도해 보세요.',
-  [Phrase.CloudUsage]: '클라우드 사용량',
-  [Phrase.DiskUsage]: '디스크 사용량',
+  [Phrase.CloudUsageDescription]: '클라우드 사용량',
+  [Phrase.DiskUsageDescription]: '디스크 사용량',
   [Phrase.Hardware]: 'Hardware',
   [Phrase.Software]: 'Software',
   [Phrase.All]: '전체',
@@ -413,6 +413,14 @@ const KOREAN: Translations = {
   [Phrase.SelectProcess]: "응용 프로그램 선택",
   [Phrase.AudioProcessDevicesDescription]: "선택한 스피커와 마이크 외에 오디오를 포함할 응용 프로그램",
   [Phrase.ProcessVolumeDescription]: "기록에서 응용 프로그램의 볼륨은 0에서 1까지입니다.",
+  [Phrase.HideEmptyCategoriesLabel]: "빈 카테고리 숨기기",
+  [Phrase.HideEmptyCategoriesDescription]: "비디오가 없는 카테고리를 숨깁니다.",
+  [Phrase.HardwareAccelerationLabel]: "하드웨어 가속",
+  [Phrase.HardwareAccelerationDescription]: "프로그램의 하드웨어 가속 렌더링을 활성화합니다. 이 기능은 대부분의 사용자에게 권장되며, 특히 AV1 인코딩을 사용하는 경우에 유용하지만 일부 시스템에서는 문제가 발생할 수 있습니다. 이 변경 사항은 프로그램을 재시작해야 적용됩니다.",
+  [Phrase.RecordCurrentRaidsOnlyLabel]: "현재 시즌 레이드만 기록",
+  [Phrase.RecordCurrentRaidsOnlyDescription]: "현재 시즌의 레이드 전투만 기록합니다. 이는 본섭 레이드 전투에만 적용됩니다.",
+  [Phrase.UploadCurrentRaidsOnlyLabel]: "현재 시즌 레이드만 업로드",
+  [Phrase.UploadCurrentRaidsOnlyDescription]: "현재 시즌의 레이드 전투만 업로드합니다. 이는 본섭 레이드 전투에만 적용됩니다.",
 };
 
 export default KOREAN;

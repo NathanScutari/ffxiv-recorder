@@ -1,6 +1,13 @@
 import * as React from 'react';
 import { AppState, RendererVideo } from 'main/types';
-import { MutableRefObject, useEffect, useMemo, useRef } from 'react';
+import {
+  Dispatch,
+  MutableRefObject,
+  SetStateAction,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import {
   Eye,
   GripHorizontal,
@@ -15,8 +22,11 @@ import { VideoCategory } from '../types/VideoCategory';
 import SearchBar from './SearchBar';
 import VideoMarkerToggles from './VideoMarkerToggles';
 import { useSettings } from './useSettings';
-import { povDiskFirstNameSort } from './rendererutils';
-import StateManager from './StateManager';
+import {
+  getVideoCategoryFilter,
+  getVideoStorageFilter,
+  povDiskFirstNameSort,
+} from './rendererutils';
 import Separator from './components/Separator/Separator';
 import { Button } from './components/Button/Button';
 import VideoSelectionTable from './components/Tables/VideoSelectionTable';
@@ -31,17 +41,17 @@ import { Popover, PopoverContent } from './components/Popover/Popover';
 import { PopoverTrigger } from '@radix-ui/react-popover';
 import ViewpointSelection from './components/Viewpoints/ViewpointSelection';
 import useTable from './components/Tables/TableData';
-import TagDialog from './TagDialog';
 import { Tooltip } from './components/Tooltip/Tooltip';
 import DateRangePicker from './DateRangePicker';
 import StorageFilterToggle from './StorageFilterToggle';
+import VideoCorrelator from './VideoCorrelator';
 
 interface IProps {
   category: VideoCategory;
-  stateManager: MutableRefObject<StateManager>;
-  categoryState: RendererVideo[];
+  videoState: RendererVideo[];
+  setVideoState: Dispatch<SetStateAction<RendererVideo[]>>;
   appState: AppState;
-  setAppState: React.Dispatch<React.SetStateAction<AppState>>;
+  setAppState: Dispatch<SetStateAction<AppState>>;
   persistentProgress: MutableRefObject<number>;
   playerHeight: MutableRefObject<number>;
 }
@@ -52,8 +62,8 @@ interface IProps {
 const CategoryPage = (props: IProps) => {
   const {
     category,
-    stateManager,
-    categoryState,
+    videoState,
+    setVideoState,
     appState,
     setAppState,
     persistentProgress,
@@ -73,27 +83,28 @@ const CategoryPage = (props: IProps) => {
   const { write, del } = cloudStatus;
   const [config, setConfig] = useSettings();
 
+  // The category state, recalculated only when required.
+  const categoryState = useMemo<RendererVideo[]>(() => {
+    const categoryFilter = getVideoCategoryFilter(category);
+    return videoState.filter(categoryFilter);
+  }, [videoState, category]);
+
+  // Filter by storage type before we apply grouping.
+  const correlatedState = useMemo<RendererVideo[]>(() => {
+    const storageFilterFn = getVideoStorageFilter(storageFilter);
+    const storageFilteredState = categoryState.filter(storageFilterFn);
+    return VideoCorrelator.correlate(storageFilteredState);
+  }, [categoryState, storageFilter]);
+
+  // Now apply filtering based on search tags and date range.
   const filteredState = useMemo<RendererVideo[]>(() => {
     const queryFilter = (rv: RendererVideo) =>
-      new VideoFilter(
-        videoFilterTags,
-        dateRangeFilter,
-        storageFilter,
-        rv,
-        language,
-      ).filter();
-
-    return categoryState.filter(queryFilter);
-  }, [
-    categoryState,
-    dateRangeFilter,
-    storageFilter,
-    videoFilterTags,
-    language,
-  ]);
+      new VideoFilter(rv, videoFilterTags, dateRangeFilter, language).filter();
+    return correlatedState.filter(queryFilter);
+  }, [correlatedState, dateRangeFilter, videoFilterTags, language]);
 
   // The data backing the video selection table.
-  const table = useTable(filteredState, appState, stateManager);
+  const table = useTable(filteredState, appState, setVideoState);
 
   const haveVideos = categoryState.length > 0;
   const isClips = category === VideoCategory.Clips;
@@ -204,11 +215,6 @@ const CategoryPage = (props: IProps) => {
     return [first, ...first.multiPov];
   };
 
-  const bulkDelete = (videos: RendererVideo[]) => {
-    window.electron.ipcRenderer.sendMessage('deleteVideos', videos);
-    stateManager.current.deleteVideos(videos);
-  };
-
   const getVideoSelection = () => {
     const selectedRows = table.getSelectedRowModel().rows;
     const selectedViewpoints = getAllSelectedViewpoints();
@@ -244,67 +250,33 @@ const CategoryPage = (props: IProps) => {
     const unique = [...new Set(names)];
     const allowMultiPlayer = unique.length > 1;
 
-    const renderTagButton = () => {
-      const toTag = selectedViewpoints;
-
-      const noPermission = !write && toTag.some((v) => v.cloud);
-      const disabled = selectedRows.length > 1 || noPermission;
-
-      let tag = '';
-      let icon = <MessageSquare size={18} />;
-
-      let tooltip = noPermission
-        ? getLocalePhrase(language, Phrase.GuildNoPermission)
-        : getLocalePhrase(language, Phrase.TagButtonTooltip);
-
-      const foundTag = toTag.map((v) => v.tag).find((t) => t);
-
-      if (foundTag) {
-        tag = foundTag;
-        icon = <MessageSquareMore size={18} />;
-
-        if (tag.length > 50) {
-          tooltip = `${tag.slice(0, 50)}...`;
-        } else {
-          tooltip = tag;
-        }
-      }
-
-      return (
-        <Tooltip content={tooltip}>
-          <div>
-            <TagDialog
-              initialTag={tag}
-              videos={toTag}
-              stateManager={stateManager}
-              appState={appState}
-            >
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={disabled}
-                className="border border-background"
-              >
-                {icon}
-              </Button>
-            </TagDialog>
-          </div>
-        </Tooltip>
-      );
-    };
-
     const protectVideo = (
       _event: React.SyntheticEvent,
       protect: boolean,
       videos: RendererVideo[],
     ) => {
-      stateManager.current.setProtected(protect, videos);
-
       window.electron.ipcRenderer.sendMessage('videoButton', [
         'protect',
         protect,
         videos,
       ]);
+
+      setVideoState((prev) => {
+        const state = [...prev];
+
+        state.forEach((rv) => {
+          // A video is uniquely identified by its name and storage type.
+          const match = videos.find(
+            (v) => v.videoName === rv.videoName && v.cloud === rv.cloud,
+          );
+
+          if (match) {
+            rv.isProtected = protect;
+          }
+        });
+
+        return state;
+      });
     };
 
     const renderProtectButton = () => {
@@ -361,24 +333,15 @@ const CategoryPage = (props: IProps) => {
         ? getLocalePhrase(language, Phrase.GuildNoPermission)
         : getLocalePhrase(language, Phrase.BulkDeleteButtonTooltip);
 
-      const deleteWarning = `${getLocalePhrase(
-        language,
-        Phrase.ThisWillPermanentlyDelete,
-      )} ${toDelete.length} ${getLocalePhrase(
-        language,
-        Phrase.Recordings,
-      )} ${getLocalePhrase(
-        language,
-        Phrase.From,
-      )} ${Math.max(selectedRows.length, 1)} ${getLocalePhrase(language, Phrase.Rows)}.`;
-
       return (
         <Tooltip content={tooltip}>
           <div>
             <DeleteDialog
-              onDelete={() => bulkDelete(toDelete)}
-              warning={deleteWarning}
+              key={toDelete.map((v) => v.videoName).join(',')} // Forces a remount on selection change.
+              inScope={toDelete}
               appState={appState}
+              setVideoState={setVideoState}
+              selectedRowCount={selectedRows.length}
             >
               <Button
                 variant="secondary"
@@ -506,10 +469,10 @@ const CategoryPage = (props: IProps) => {
                 {getLocalePhrase(language, Phrase.StorageFilterLabel)}
               </Label>
               <StorageFilterToggle
+                categoryState={categoryState}
                 appState={appState}
                 setAppState={setAppState}
                 table={table}
-                stateManager={stateManager}
               />
             </div>
           </div>
@@ -517,7 +480,6 @@ const CategoryPage = (props: IProps) => {
           <div>
             {renderSelectionLabel()}
             <div className="flex gap-x-1 mr-2 py-[1px]">
-              {renderTagButton()}
               {renderProtectButton()}
               {renderDeleteButton()}
             </div>
@@ -529,7 +491,6 @@ const CategoryPage = (props: IProps) => {
             table={table}
             appState={appState}
             setAppState={setAppState}
-            stateManager={stateManager}
             persistentProgress={persistentProgress}
           />
         </div>

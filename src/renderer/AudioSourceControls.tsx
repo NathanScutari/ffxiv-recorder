@@ -135,14 +135,6 @@ const AudioSourceControls = (props: IProps) => {
     listenNextKeyPress();
   }, [pttHotKeyFieldFocused, setConfig]);
 
-  const dbfsToPercent = (dbfs: number) => {
-    // OBS returns data in dBFS, which is a logarithmic scale.
-    // 0dBFS is the maximum level, and approximately -100dBFS is silence.
-    // Just clamp it between -100 and 0 and add 100 to get a percentage.
-    const clamped = Math.max(-100, Math.min(0, dbfs));
-    return clamped + 100;
-  };
-
   const getSourceAverageMagnitude = (
     data: ObsVolmeterCallbackInfo[],
     prefix: string,
@@ -151,9 +143,22 @@ const AudioSourceControls = (props: IProps) => {
       .filter((d) => d.sourceName.startsWith(prefix))
       .flatMap((d) => d.magnitude);
 
+    // OBS returns data in dBFS, which is a logarithmic scale. 0dBFS is the
+    // maximum level, and approximately -100dBFS is silence. Add 100 roughly
+    // convert it to a percentage.
     const length = magnitudes.length;
     if (length === 0) return -100;
-    const average = magnitudes.reduce((a, b) => a + b, 0) / length;
+
+    const average =
+      magnitudes
+        // Sometimes OBS returns magintudes of -65k. Not sure why but clamp it
+        // to avoid messing with the average. Both -65k and -100 are silence.
+        // Also clamp to 0 to avoid any unexpected positive values, just
+        // being cautious with that, no actual evidence of this happening.
+        .map((m) => Math.max(m, -100))
+        .map((m) => Math.min(m, 0))
+        .reduce((a, b) => a + b, 0) / length;
+
     return average;
   };
 
@@ -162,10 +167,12 @@ const AudioSourceControls = (props: IProps) => {
     const mics = getSourceAverageMagnitude(data, 'WCR Mic Source');
     const processes = getSourceAverageMagnitude(data, 'WCR App Source');
 
+    // We've clamped between -100 and 0. Very lazy maths here to convert it
+    // to a value between 0 and 100, to use as a position on the progress bar.
     setVolmeter({
-      output: dbfsToPercent(speakers),
-      input: dbfsToPercent(mics),
-      process: dbfsToPercent(processes),
+      output: speakers + 100,
+      input: mics + 100,
+      process: processes + 100,
     });
   };
 
@@ -222,6 +229,22 @@ const AudioSourceControls = (props: IProps) => {
   };
 
   const getSpeakerSelect = () => {
+    const options = availableAudioDevices.output.map((audioDevice) => ({
+      value: audioDevice.id,
+      label: audioDevice.description,
+    }));
+
+    config.audioOutputDevices
+      .split(',')
+      .filter((id) => id)
+      .forEach((id) => {
+        const found = options.find((o) => o.value === id);
+
+        if (!found) {
+          options.push({ value: id, label: 'Unknown Device' });
+        }
+      });
+
     return (
       <div className="flex flex-col w-full">
         <Label className="flex items-center">
@@ -237,10 +260,7 @@ const AudioSourceControls = (props: IProps) => {
           </Tooltip>
         </Label>
         <MultiSelect
-          options={availableAudioDevices.output.map((audioDevice) => ({
-            value: audioDevice.id,
-            label: audioDevice.description,
-          }))}
+          options={options}
           onValueChange={(values) => onDeviceChange(DeviceType.OUTPUT, values)}
           defaultValue={config.audioOutputDevices.split(',').filter((d) => d)}
           placeholder={getLocalePhrase(
@@ -284,6 +304,22 @@ const AudioSourceControls = (props: IProps) => {
   };
 
   const getMicSelect = () => {
+    const options = availableAudioDevices.input.map((audioDevice) => ({
+      value: audioDevice.id,
+      label: audioDevice.description,
+    }));
+
+    config.audioInputDevices
+      .split(',')
+      .filter((id) => id)
+      .forEach((id) => {
+        const found = options.find((o) => o.value === id);
+
+        if (!found) {
+          options.push({ value: id, label: 'Unknown Device' });
+        }
+      });
+
     return (
       <div className="flex flex-col w-full">
         <Label className="flex items-center">
@@ -299,10 +335,7 @@ const AudioSourceControls = (props: IProps) => {
           </Tooltip>
         </Label>
         <MultiSelect
-          options={availableAudioDevices.input.map((audioDevice) => ({
-            value: audioDevice.id,
-            label: audioDevice.description,
-          }))}
+          options={options}
           onValueChange={(values) => onDeviceChange(DeviceType.INPUT, values)}
           defaultValue={config.audioInputDevices.split(',').filter((d) => d)}
           placeholder={getLocalePhrase(

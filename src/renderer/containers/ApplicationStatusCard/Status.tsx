@@ -3,7 +3,7 @@ import { Phrase } from 'localisation/types';
 import { CloudDownload, CloudUpload, HardDriveDownload } from 'lucide-react';
 import { ConfigurationSchema } from 'config/configSchema';
 import { AppState, RecStatus, SaveStatus } from 'main/types';
-import React, { useRef } from 'react';
+import React from 'react';
 import { Button } from 'renderer/components/Button/Button';
 import {
   HoverCard,
@@ -260,57 +260,41 @@ const Status = ({
       statusDescription: RecStatusDescription[status],
     };
 
-  const [uploadProgress, setUploadProgress] = React.useState<number | false>(
-    false,
-  );
-  const [downloadProgress, setDownloadProgress] = React.useState<
-    number | false
-  >(false);
+  const [uploadProgress, setUploadProgress] = React.useState(0);
+  const [downloadProgress, setDownloadProgress] = React.useState(0);
 
-  const clearUploadProgressTimer = useRef<NodeJS.Timeout | null>(null);
-  const clearDownloadProgressTimer = useRef<NodeJS.Timeout | null>(null);
+  const [queuedUploads, setQueuedUploads] = React.useState(0);
+  const [queuedDownloads, setQueuedDownloads] = React.useState(0);
 
   React.useEffect(() => {
     const ipc = window.electron.ipcRenderer;
 
     ipc.on('updateUploadProgress', (progress) => {
-      if (clearUploadProgressTimer.current) {
-        clearTimeout(clearUploadProgressTimer.current);
-      }
-
-      if (progress === null || progress === undefined || progress === 100) {
-        clearUploadProgressTimer.current = setTimeout(
-          () => setUploadProgress(false),
-          1000,
-        );
-      }
-
       setUploadProgress(progress as number);
     });
 
     ipc.on('updateDownloadProgress', (progress) => {
-      if (clearDownloadProgressTimer.current) {
-        clearTimeout(clearDownloadProgressTimer.current);
-      }
-
-      if (progress === null || progress === undefined || progress === 100) {
-        clearDownloadProgressTimer.current = setTimeout(
-          () => setDownloadProgress(false),
-          1000,
-        );
-      }
-
       setDownloadProgress(progress as number);
+    });
+
+    ipc.on('updateDownloadQueueLength', (queued) => {
+      setQueuedDownloads(queued as number);
+    });
+
+    ipc.on('updateUploadQueueLength', (queued) => {
+      setQueuedUploads(queued as number);
     });
 
     return () => {
       ipc.removeAllListeners('updateUploadProgress');
       ipc.removeAllListeners('updateDownloadProgress');
+      ipc.removeAllListeners('updateDownloadQueueLength');
+      ipc.removeAllListeners('updateUploadQueueLength');
     };
   }, []);
 
   const isSaving = savingStatus === SaveStatus.Saving;
-  const isUpDowning = uploadProgress !== false || downloadProgress !== false;
+  const isUpDowning = queuedUploads > 0 || queuedDownloads > 0;
 
   return (
     <HoverCard openDelay={300}>
@@ -347,20 +331,23 @@ const Status = ({
                 {isUpDowning && (
                   <>
                     <>
-                      {downloadProgress !== false && (
+                      {queuedDownloads > 0 && (
                         <>
                           <CloudDownload size={14} />{' '}
                           {downloadProgress.toFixed(0)}%
+                          {queuedDownloads > 1 && ` (+${queuedDownloads - 1}) `}
                         </>
                       )}
                     </>
-                    {downloadProgress !== false && uploadProgress !== false && (
+                    {queuedDownloads > 0 && queuedUploads > 0 && (
                       <Separator orientation="vertical" />
                     )}
                     <>
-                      {uploadProgress !== false && (
+                      {queuedUploads > 0 && (
                         <>
-                          <CloudUpload size={14} /> {uploadProgress.toFixed(0)}%
+                          <CloudUpload size={14} />
+                          {uploadProgress.toFixed(0)}%
+                          {queuedUploads > 1 && ` (+${queuedUploads - 1}) `}
                         </>
                       )}
                     </>
