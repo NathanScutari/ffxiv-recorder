@@ -216,7 +216,7 @@ export default class Manager {
 
     this.poller
       .on('xivProcessStart', () => this.onXIVStarted())
-      .on('xivProcessStop', () => this.onXIVStopped());
+      .on('xivProcessStop', () => this.onXIVStopped()).start();
 
     setInterval(() => this.restartRecorder(), 5 * (1000 * 60));
   }
@@ -266,9 +266,8 @@ export default class Manager {
     // will react to the state of WoW. This will start the recorder if
     // WoW is already running.
     this.poller
-      .on('wowProcessStart', () => this.onWowStarted())
-      .on('wowProcessStop', () => this.onWowStopped())
-      .start();
+      .on('xivProcessStart', () => this.onXIVStarted())
+      .on('xivProcessStop', () => this.onXIVStopped()).start();
 
     this.active = false;
   }
@@ -1314,9 +1313,8 @@ export default class Manager {
       await this.recorder.forceStop();
 
       this.poller
-        .on('wowProcessStart', () => this.onWowStarted())
-        .on('wowProcessStop', () => this.onWowStopped())
-        .start();
+      .on('xivProcessStart', () => this.onXIVStarted())
+      .on('xivProcessStop', () => this.onXIVStopped()).start();
     });
   }
 

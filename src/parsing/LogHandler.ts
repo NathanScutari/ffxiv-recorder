@@ -65,18 +65,6 @@ export default abstract class LogHandler extends EventEmitter {
     this.mainWindow = mainWindow;
     this.recorder = recorder;
 
-    this.combatLogWatcher = new CombatLogWatcher(logPath, dataTimeout);
-    this.combatLogWatcher.watch();
-
-    this.combatLogWatcher.on('timeout', (ms: number) => {
-      this.dataTimeout(ms);
-    });
-
-    // For ease of testing force stop.
-    this.combatLogWatcher.on('WARCRAFT_RECORDER_FORCE_STOP', () => {
-      this.forceEndActivity();
-    });
-
     this.videoProcessQueue = videoProcessQueue;
   }
 
