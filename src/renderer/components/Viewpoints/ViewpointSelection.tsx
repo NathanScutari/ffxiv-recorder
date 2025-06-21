@@ -14,6 +14,7 @@ import {
 } from '../../rendererutils';
 import { specImages } from '../../images';
 import { getLocalePhrase, Phrase } from 'localisation/translations';
+import { JobChecker } from 'parsing/JobChecker';
 
 interface IProps {
   video: RendererVideo;
@@ -38,7 +39,7 @@ export default function ViewpointSelection(props: IProps) {
     let cloudVideo: RendererVideo | null = null;
     let diskVideo: RendererVideo | null = null;
 
-    let unitClass: WoWCharacterClassType = 'UNKNOWN';
+    let unitClass: string | undefined;
     let currentlySelected = false;
     let povAvailable = false;
 
@@ -47,7 +48,8 @@ export default function ViewpointSelection(props: IProps) {
       // combatants we have a viewpoint for will be colored, else they will
       // be gray.
       const v = matches[0];
-      unitClass = getPlayerClass(v);
+      const { player } = v;
+      unitClass = player?._jobName;
       povAvailable = true;
     }
 
@@ -153,11 +155,13 @@ export default function ViewpointSelection(props: IProps) {
       });
     };
 
-    let classColor =
-      unitClass === 'UNKNOWN' ? 'gray' : getWoWClassColor(unitClass);
+    let classColor = 'gray';
 
     if (povAvailable) {
       classColor = 'lightgray';
+      if (unitClass && unitClass !== "") {
+        classColor = JobChecker.getJobColorFromName(unitClass) ?? classColor;
+      }
     }
 
     const cursor = cloudVideo || diskVideo ? 'cursor-pointer' : '';

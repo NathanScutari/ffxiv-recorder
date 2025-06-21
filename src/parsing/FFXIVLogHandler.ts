@@ -10,6 +10,7 @@ import { LogLineFFXIV } from './LogLineFFXIV';
 import Ennemy from 'main/Ennemy';
 import CombatLogWatcherFFXIV from './CombatLogWatcherFFXIV';
 import { ClockOffsetWatcher } from './ClockOffsetWatcher';
+import { JobChecker } from './JobChecker';
 
 export default class FfXIVLogHandler extends LogHandler {
   private isInCombat: boolean;
@@ -229,6 +230,16 @@ export default class FfXIVLogHandler extends LogHandler {
         targetMaxHealth,
         sourceId,
       );
+
+      let player = this.activity.getCombatant(event.line[3]);
+      if (player && player.jobName == "") {
+        JobChecker.getJobNameFromActionId(event.line[4]).then(jobName => {
+          if (jobName) {
+            player.jobName = jobName;
+            console.info("Found job / class for combatant : ", player.name, player.jobName);
+        }
+        });
+      }
   }
 
   private checkAddEnnemy(

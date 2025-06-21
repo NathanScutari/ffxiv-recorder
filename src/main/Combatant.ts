@@ -112,6 +112,7 @@ export default class Combatant {
     if (this.specID !== undefined) rawCombatant._specID = this.specID;
     if (this.name !== undefined) rawCombatant._name = this.name;
     if (this.realm !== undefined) rawCombatant._realm = this.realm;
+    if (this.jobName !== undefined) rawCombatant._jobName = this.jobName;
 
 
     return rawCombatant;
