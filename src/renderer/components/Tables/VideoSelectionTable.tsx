@@ -33,6 +33,7 @@ interface IProps {
  */
 const VideoSelectionTable = (props: IProps) => {
   const { appState, setAppState, persistentProgress, table } = props;
+  const { videoFilterTags, dateRangeFilter, storageFilter } = appState;
 
   /**
    * Mark the row as selected and update the video player to play the first
@@ -43,21 +44,18 @@ const VideoSelectionTable = (props: IProps) => {
       event: React.MouseEvent<HTMLTableRowElement> | KeyboardEvent,
       row: Row<RendererVideo>,
     ) => {
-      const allRows = table.getRowModel().rows;
+      const allRows = table.getSortedRowModel().rows;
       const selectedRows = table.getSelectedRowModel().rows;
-      const isSelected = selectedRows.map((r) => r.index).includes(row.index);
+      const isSelected = selectedRows.some((r) => r.id === row.id);
+      const targetIndex = allRows.findIndex((r) => r.id === row.id);
 
-      if (event.shiftKey && event instanceof KeyboardEvent) {
-        // Just add the next row down to the selection.
-        row.getToggleSelectedHandler()(event);
-        return;
-      }
       if (event.shiftKey) {
-        // Select a range of rows.
-        const base = selectedRows[0] ? selectedRows[0].index : allRows[0].index;
-        const target = row.index;
-        const start = Math.min(base, target);
-        const end = Math.max(base, target) + 1;
+        const baseIndex = selectedRows[0]
+          ? allRows.findIndex((r) => r.id === selectedRows[0].id)
+          : 0;
+
+        const start = Math.min(baseIndex, targetIndex);
+        const end = Math.max(baseIndex, targetIndex) + 1;
 
         allRows.slice(start, end).forEach((r) => {
           if (!r.getIsSelected()) {
@@ -68,7 +66,7 @@ const VideoSelectionTable = (props: IProps) => {
         return;
       }
 
-      if (event.ctrlKey && !(event instanceof KeyboardEvent)) {
+      if (event.ctrlKey) {
         // Add a single row to the Selection.
         row.getToggleSelectedHandler()(event);
         return;
@@ -80,7 +78,7 @@ const VideoSelectionTable = (props: IProps) => {
 
       // It's a regular click, so unselect any other selected rows.
       selectedRows.forEach((r) => {
-        if (r.index !== row.index) {
+        if (r.id !== row.id) {
           r.getToggleSelectedHandler()(event);
         }
       });
@@ -90,14 +88,12 @@ const VideoSelectionTable = (props: IProps) => {
         row.getToggleSelectedHandler()(event);
       }
 
-      setAppState((prevState) => {
-        return {
-          ...prevState,
-          selectedVideos: povs[0] ? [povs[0]] : [],
-          multiPlayerMode: false,
-          playing: false,
-        };
-      });
+      setAppState((prevState) => ({
+        ...prevState,
+        selectedVideos: povs[0] ? [povs[0]] : [],
+        multiPlayerMode: false,
+        playing: false,
+      }));
     },
     [persistentProgress, setAppState, table],
   );
@@ -109,59 +105,43 @@ const VideoSelectionTable = (props: IProps) => {
    */
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'a' && event.ctrlKey) {
-        const { rows } = table.getRowModel();
+      const sortedRows = table.getSortedRowModel().rows;
+      const selectedRows = table.getSelectedRowModel().rows;
 
-        rows.forEach((r) => {
-          if (!r.getIsSelected()) {
-            r.getToggleSelectedHandler()(event);
+      if (event.key === 'a' && event.ctrlKey) {
+        sortedRows.forEach((row) => {
+          if (!row.getIsSelected()) {
+            row.getToggleSelectedHandler()(event);
           }
         });
 
         event.preventDefault();
         event.stopPropagation();
-      }
-
-      if (event.key === 'ArrowDown' && !event.repeat) {
-        const selection = table.getSelectedRowModel().rows;
-        const end = selection[selection.length - 1];
-
-        if (end) {
-          const indexNextDown = end.index + 1;
-          const rowNextDown = table.getRowModel().rows[indexNextDown];
-
-          if (rowNextDown) {
-            onRowClick(event, rowNextDown);
-          }
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-      }
-
-      if (event.key === 'ArrowUp' && !event.repeat) {
-        const selection = table.getSelectedRowModel().rows;
-        const start = selection[0];
-
-        if (start) {
-          const indexNextUp = start.index - 1;
-          const rowNextUp = table.getRowModel().rows[indexNextUp];
-
-          if (rowNextUp) {
-            onRowClick(event, rowNextUp);
-          }
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
+        return;
       }
 
       if (
-        event.key === 'ArrowUp' ||
-        event.key === 'ArrowDown' ||
-        event.repeat
+        (event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
+        !event.repeat
       ) {
-        // Prevent the default behaviour of the arrow keys.
+        if (selectedRows.length === 0) return;
+
+        const currentRow =
+          event.key === 'ArrowDown'
+            ? selectedRows[selectedRows.length - 1]
+            : selectedRows[0];
+
+        const currentIndex = sortedRows.findIndex(
+          (r) => r.id === currentRow.id,
+        );
+        const nextIndex =
+          event.key === 'ArrowDown' ? currentIndex + 1 : currentIndex - 1;
+        const nextRow = sortedRows[nextIndex];
+
+        if (nextRow) {
+          onRowClick(event, nextRow);
+        }
+
         event.preventDefault();
         event.stopPropagation();
       }
@@ -178,7 +158,7 @@ const VideoSelectionTable = (props: IProps) => {
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('mousedown', handleMouseDown);
     };
-  }, [table, onRowClick]);
+  }, [table, onRowClick, videoFilterTags, dateRangeFilter, storageFilter]);
 
   /**
    * Render an individual header.
@@ -283,7 +263,7 @@ const VideoSelectionTable = (props: IProps) => {
     const selected =
       row.getIsSelected() ||
       (!table.getIsSomeRowsSelected() && row.index === 0);
-    
+
     return <Fragment key={row.id}>{renderBaseRow(row, selected)}</Fragment>;
   };
 
