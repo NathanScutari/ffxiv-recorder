@@ -491,6 +491,24 @@ const ENGLISH: Translations = {
   [Phrase.SelectOptions]: 'Select options',
   [Phrase.SelectLanguage]: 'Select language',
   [Phrase.ChatDeleteMessageTooltip]: 'Delete this chat message',
+  [Phrase.RecordRetailDescription]: '',
+  [Phrase.RecordClassicDescription]: '',
+  [Phrase.RecordClassicPtrDescription]: '',
+  [Phrase.RecordEraDescription]: '',
+  [Phrase.RecordFFXIVDescription]: '',
+  [Phrase.RecordRetailLabel]: '',
+  [Phrase.RecordClassicLabel]: '',
+  [Phrase.ClassicLogPathLabel]: '',
+  [Phrase.RecordClassicPtrLabel]: '',
+  [Phrase.ClassicPtrLogPathLabel]: '',
+  [Phrase.RecordClassicEraLabel]: '',
+  [Phrase.ClassicEraLogPathLabel]: '',
+  [Phrase.Retail]: '',
+  [Phrase.Classic]: '',
+  [Phrase.ClassicPtr]: '',
+  [Phrase.Era]: '',
+  [Phrase.RetailPtrLogPathDescription]: '',
+  [Phrase.RecordRetailPtrDescription]: ''
 };
 
 export default ENGLISH;

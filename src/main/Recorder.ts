@@ -117,6 +117,13 @@ export default class Recorder extends EventEmitter {
   private findWindowAttemptLimit = 10;
 
   /**
+   * Retry state for attempts to start the buffer when WoW is running but the
+   * capture source is not attached yet.
+   */
+  private startAttempts = 0;
+  private startAttemptLimit = 3;
+
+  /**
    * Resolution selected by the user in settings.
    */
   private resolution: keyof typeof obsResolutions = this.cfg.get<string>(
@@ -239,8 +246,8 @@ export default class Recorder extends EventEmitter {
       console.info('[Manager] Audio settings were opened');
       noobs.SetVolmeterEnabled(true);
 
-      if (Poller.getInstance().isWowRunning()) {
-        console.info('[Manager] Wont touch audio sources as WoW is running');
+      if (Poller.getInstance().isXIVRunning()) {
+        console.info('[Manager] Wont touch audio sources as XIV is running');
         return;
       }
 
@@ -252,8 +259,8 @@ export default class Recorder extends EventEmitter {
       console.info('[Manager] Audio settings were closed');
       noobs.SetVolmeterEnabled(false);
 
-      if (Poller.getInstance().isWowRunning()) {
-        console.info('[Manager] Wont touch audio sources as WoW is running');
+      if (Poller.getInstance().isXIVRunning()) {
+        console.info('[Manager] Wont touch audio sources as XIV is running');
         return;
       }
 
@@ -623,10 +630,14 @@ export default class Recorder extends EventEmitter {
       throw new Error('Unrecognised capture mode');
     }
 
-    const wowRunning = Poller.getInstance().isWowRunning();
+    const wowRunning = Poller.getInstance().isXIVRunning();
 
     if (wowRunning && obsCaptureMode !== 'monitor_capture') {
-      this.attachCaptureSource();
+      try {
+        this.attachCaptureSource();
+      } catch (err) {
+        console.warn('[Recorder] attachCaptureSource failed at startup, will retry later', err);
+      }
     }
 
     const overlayCfg = getOverlayConfig(this.cfg);
@@ -938,6 +949,44 @@ export default class Recorder extends EventEmitter {
       throw new Error('OBS not initialized');
     }
 
+    // If XIV is running and we're using game/window capture, ensure the capture
+    // source is attached to a window before calling into the native StartBuffer.
+    // Native noobs can crash if StartBuffer is invoked in this inconsistent state.
+    if (Poller.getInstance().isXIVRunning() && this.captureMode !== CaptureMode.MONITOR) {
+      let attached = false;
+
+      if (this.captureSource) {
+        try {
+          const settings = noobs.GetSourceSettings(this.captureSource);
+          attached = !!settings && !!settings.window;
+        } catch (e) {
+          attached = false;
+        }
+      }
+
+      if (!attached) {
+        if (this.startAttempts >= this.startAttemptLimit) {
+          console.warn('[Recorder] Giving up starting buffer - capture source not attached after retries');
+          return;
+        }
+
+        console.warn('[Recorder] Delaying start buffer until capture source attached');
+        this.startAttempts++;
+        // Try to attach now and schedule a retry
+        try {
+          this.attachCaptureSource();
+        } catch (e) {
+          // attachCaptureSource is already defensive, ignore errors here
+        }
+
+        setTimeout(() => {
+          this.startBuffer().catch(() => {});
+        }, this.findWindowIntervalDuration);
+
+        return;
+      }
+    }
+
     if (this.obsState === ERecordingState.Recording) {
       console.info('[Recorder] Already started');
       return;
@@ -952,6 +1001,8 @@ export default class Recorder extends EventEmitter {
     ]);
 
     this.startQueue.empty();
+    // Reset retry counter on success
+    this.startAttempts = 0;
   }
 
   /**

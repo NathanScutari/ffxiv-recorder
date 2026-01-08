@@ -1,6 +1,5 @@
 import { app, ipcMain, powerMonitor } from 'electron';
 import { uIOhook, UiohookKeyboardEvent } from 'uiohook-napi';
-import EraLogHandler from '../parsing/EraLogHandler';
 import {
   buildClipMetadata,
   getMetadataForVideo,
@@ -57,7 +56,6 @@ export default class Manager {
    */
   private retailLogHandler: RetailLogHandler | undefined;
   private retailPtrLogHandler: RetailLogHandler | undefined;
-  private eraLogHandler: EraLogHandler | undefined;
   private ffxivLogHandler: FFXIVLogHandler | undefined;
 
   /**
@@ -210,7 +208,6 @@ export default class Manager {
     if (retail) {
       console.info('[Manager] Running retail test');
       const parser = retail.combatLogWatcher;
-      runRetailRecordingTest(category, parser, endTest);
       return;
     }
   }
@@ -354,7 +351,6 @@ export default class Manager {
       const logHandlers = [
         this.retailLogHandler,
         this.retailPtrLogHandler,
-        this.eraLogHandler,
         this.ffxivLogHandler
       ];
 
@@ -364,25 +360,11 @@ export default class Manager {
 
       this.retailLogHandler = undefined;
       this.retailPtrLogHandler = undefined;
-      this.eraLogHandler = undefined;
       this.ffxivLogHandler = undefined;
     }
-
-    if (config.recordRetail) {
-      this.retailLogHandler = new RetailLogHandler(config.retailLogPath);
-    }
-
-    if (config.recordEra) {
-      this.eraLogHandler = new EraLogHandler(config.eraLogPath);
-    }
-
+    
     if (config.recordFFXIV) {
-      this.ffxivLogHandler = new FFXIVLogHandler(config.eraLogPath);
-    }
-
-    if (config.recordRetailPtr) {
-      this.retailPtrLogHandler = new RetailLogHandler(config.retailPtrLogPath);
-      this.retailPtrLogHandler.setIsPtr();
+      this.ffxivLogHandler = new FFXIVLogHandler(config.xivLogPath, this.cfg);
     }
   }
 
@@ -398,8 +380,8 @@ export default class Manager {
    * Configure audio settings in OBS. This can all be changed live.
    */
   private configureObsAudio() {
-    const isWowRunning = this.poller.isWowRunning();
-    const shouldConfigure = isWowRunning || this.audioSettingsOpen;
+    const isXivRunning = this.poller.isXIVRunning();
+    const shouldConfigure = isXivRunning || this.audioSettingsOpen;
 
     if (!shouldConfigure) {
       console.info("[Manager] Won't configure audio sources, WoW not running");
@@ -474,7 +456,7 @@ export default class Manager {
         return;
       }
 
-      const isXivRunning = this.poller.isXivRunning();
+      const isXivRunning = this.poller.isXIVRunning();
 
       if (isXivRunning) {
         this.onXIVStarted();
@@ -521,8 +503,8 @@ export default class Manager {
         return;
       }
 
-      if (!this.poller.isWowRunning()) {
-        console.warn('[Manager] WoW not running when manual hotkey pressed');
+      if (!this.poller.isXIVRunning()) {
+        console.warn('[Manager] XIV not running when manual hotkey pressed');
         return;
       }
 

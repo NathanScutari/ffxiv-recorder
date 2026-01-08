@@ -302,7 +302,7 @@ export default abstract class LogHandler {
     let videoFile;
 
     const stopPromise = recorder.stop(); // Queue the stop.
-    const wowRunning = poller.isWowRunning();
+    const wowRunning = poller.isXIVRunning();
 
     if (wowRunning) {
       // Immediately queue the buffer start so it's ready if we go instantly into another activity.

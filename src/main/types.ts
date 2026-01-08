@@ -378,17 +378,8 @@ type BaseConfig = {
   obsFPS: number;
   obsQuality: string;
   obsRecEncoder: string;
-  recordRetail: boolean;
-  retailLogPath: string;
-  recordClassic: boolean;
   recordFFXIV: boolean;
-  recordClassicPtr: boolean;
-  classicLogPath: string;
-  classicPtrLogPath: string;
-  recordEra: boolean;
-  eraLogPath: string;
-  recordRetailPtr: boolean;
-  retailPtrLogPath: string;
+  xivLogPath: string;
 };
 
 type ObsVideoConfig = {

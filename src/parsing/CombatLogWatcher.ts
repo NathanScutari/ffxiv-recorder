@@ -177,7 +177,7 @@ export default class CombatLogWatcher extends EventEmitter {
   private async parseFileChunk(file: string, bytes: number, position: number) {
     const buffer = Buffer.alloc(bytes);
     const handle = await open(file, 'r');
-    const { bytesRead } = await read(handle, buffer, 0, bytes, position);
+    const { bytesRead } = await read(handle, new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.length), 0, bytes, position);
     close(handle);
 
     if (bytesRead !== bytes) {

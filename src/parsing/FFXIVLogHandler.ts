@@ -11,31 +11,32 @@ import Ennemy from 'main/Ennemy';
 import CombatLogWatcherFFXIV from './CombatLogWatcherFFXIV';
 import { ClockOffsetWatcher } from './ClockOffsetWatcher';
 import { JobChecker } from './JobChecker';
+import ConfigService from 'config/ConfigService';
 
 export default class FfXIVLogHandler extends LogHandler {
   private isInCombat: boolean;
   private playerName: string;
   private zoneName: string;
 
-  private combatLogWatcher: CombatLogWatcherFFXIV;
+  public combatLogWatcher: CombatLogWatcherFFXIV;
 
   private ennemyList: Map<string, Ennemy>;
 
   private offsetWatcher: ClockOffsetWatcher;
   private clockOffset: number;
   private startTime: Date;
+  private cfg: ConfigService;
 
   constructor(
-    mainWindow: BrowserWindow,
-    recorder: Recorder,
-    videoProcessQueue: VideoProcessQueue,
     xivLogPath: string,
+    cfg: ConfigService,
   ) {
-    super(mainWindow, recorder, videoProcessQueue, 10);
+    super(xivLogPath, 10);
     this.clockOffset = 0;
     this.isInCombat = false;
     this.combatLogWatcher = new CombatLogWatcherFFXIV(xivLogPath, 15000);
     this.startTime = new Date(Date.now());
+    this.cfg = cfg;
 
     this.combatLogWatcher.on('LogLine', (event) => {
       if (this.isLogLine(event)) this.handleLogLine(event);
@@ -98,7 +99,7 @@ export default class FfXIVLogHandler extends LogHandler {
     const maxHp = line.line[12];
     const id = line.line[2];
 
-    if (this.activity) {
+    if (FfXIVLogHandler.activity) {
       if (currentHp === maxHp) {
         console.log('Removed ennemy: ', entity, id);
         this.ennemyList.delete(id);
@@ -164,7 +165,7 @@ export default class FfXIVLogHandler extends LogHandler {
       this.startTime = new Date(Date.now());
       line.line[1] = this.startTime.toISOString();//new Date(new Date(line.line[1]).getTime() + this.clockOffset).toISOString();
       super.handleEncounterStartLine(line, Flavour.FFXIV);
-      if (this.activity) this.activity.playerGUID = this.playerName;
+      if (FfXIVLogHandler.activity) FfXIVLogHandler.activity.playerGUID = this.playerName;
     }
 
     //fin de combat
@@ -175,29 +176,29 @@ export default class FfXIVLogHandler extends LogHandler {
   }
 
   private checkForCombatant(entity: string, id: string, owner: string) {
-    if (!this.activity) return;
+    if (!FfXIVLogHandler.activity) return;
 
-    let player = this.activity.getCombatant(entity);
+    let player = FfXIVLogHandler.activity.getCombatant(entity);
     if (!player) {
       if (this.isPlayer(id, owner)) {
         player = new Combatant(entity, '');
         console.log('Added combatant: ', entity);
-        this.activity.addCombatant(player);
+        FfXIVLogHandler.activity.addCombatant(player);
 
         // Si plus de 8 personnes, alors on est pas en raid
-        if (this.activity.getPlayerCount() > 8) {
+        if (FfXIVLogHandler.activity.getPlayerCount() > 8) {
           console.info(
             'Stopped recording because player count exceeded maximum allowed.',
           );
           this.isInCombat = false;
-          this.forceEndActivity();
+          FfXIVLogHandler.forceEndActivity();
         }
       }
     }
   }
 
   private handleUnitPreDamageEvent(event: LogLineFFXIV): void {
-    if (!this.activity) return;
+    if (!FfXIVLogHandler.activity) return;
     if (event.line.length < 6) return;
 
     // On récupère les combattants que dans les 10 premières secondes, le temps de voir si il faut annuler la vidéo,
@@ -212,9 +213,9 @@ export default class FfXIVLogHandler extends LogHandler {
       const owner = event.line[47];
       this.checkForCombatant(entity, id, owner);
     } else {
-      if (this.activity.getPlayerCount() < 8) {
+      if (FfXIVLogHandler.activity.getPlayerCount() < 1) {
         console.info('Force stopping, not 8 player content');
-        this.forceEndActivity();
+        FfXIVLogHandler.forceEndActivity();
       }
     }
       const targetEntity = event.line[7];
@@ -231,7 +232,7 @@ export default class FfXIVLogHandler extends LogHandler {
         sourceId,
       );
 
-      let player = this.activity.getCombatant(event.line[3]);
+      let player = FfXIVLogHandler.activity.getCombatant(event.line[3]);
       if (player && player.jobName == "") {
         JobChecker.getJobNameFromActionId(event.line[4]).then(jobName => {
           if (jobName) {
@@ -287,10 +288,10 @@ export default class FfXIVLogHandler extends LogHandler {
   }
 
   private handleUnitDamageEvent(event: LogLineFFXIV): void {
-    if (!this.activity) return;
+    if (!FfXIVLogHandler.activity) return;
     if (event.line.length < 6) return;
     if (
-      new Date(Date.now()).getTime() - this.activity.startDate.getTime() <
+      new Date(Date.now()).getTime() - FfXIVLogHandler.activity.startDate.getTime() <
       10000
     )
       return;
@@ -305,16 +306,16 @@ export default class FfXIVLogHandler extends LogHandler {
   }
 
   protected async handleEncounterEndLine(ennemyList: Map<string, Ennemy>) {
-    if (!this.activity) return;
+    if (!FfXIVLogHandler.activity) return;
     super.handleEncounterEndLine(this.ennemyList);
   }
 
   protected handleUnitDiedLine(event: LogLineFFXIV): void {
-    if (!this.activity) return;
+    if (!FfXIVLogHandler.activity) return;
 
     const entityName = event.line[3];
     const id = event.line[2];
-    const player = this.activity.getCombatant(entityName);
+    const player = FfXIVLogHandler.activity.getCombatant(entityName);
     event.line[1] = new Date(Date.now()).toISOString();//new Date(new Date(event.line[1]).getTime() + this.clockOffset).toISOString();
 
     if (player) {
