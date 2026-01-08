@@ -80,7 +80,9 @@
       "deleteAppDataOnUninstall": true
     },
     "win": {
-      "sign": false,
+      "signtoolOptions": {
+        "certificateSubjectName": "FFXIV Recorder Limited"
+      },
       "artifactName": "FFXIVRecorder-Setup-${version}.exe",
       "target": [
         "nsis"
