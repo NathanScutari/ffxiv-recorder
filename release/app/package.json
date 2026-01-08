@@ -1,6 +1,6 @@
 {
   "name": "FFXIVRecorder",
-  "version": "7.9.0",
+  "version": "7.9.1",
   "description": "A FFXIV screen recorder",
   "main": "./dist/main/main.js",
   "author": {
