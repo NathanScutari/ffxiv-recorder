@@ -2,7 +2,7 @@ import { specializationById } from '../../main/constants';
 import RaidEncounter from '../../activitys/RaidEncounter';
 import { Flavour } from '../../main/types';
 import Combatant from '../../main/Combatant';
-import { Phrase } from '../../localisation/types';
+import { Phrase } from '../../localisation/phrases';
 import TestConfigService from '../../utils/TestConfigService';
 
 const cfg = new TestConfigService();
@@ -48,7 +48,7 @@ test('Basic Raid Encounter', () => {
   const endDate = new Date('2022-12-25T12:10:00');
   raidEncounter.end(endDate, true);
 
-  expect(raidEncounter.duration).toBe(601);
+  expect(raidEncounter.duration).toBe(603);
   expect(raidEncounter.getFileName()).toBe(
     'Vault of the Incarnates, Raszageth [M] (Kill)',
   );

@@ -9,15 +9,17 @@ import {
   useRef,
 } from 'react';
 import {
-  Eye,
   GripHorizontal,
   LockKeyhole,
   Trash,
-  MessageSquare,
-  MessageSquareMore,
   LockOpen,
+  CloudUpload,
+  CloudDownload,
+  ArrowLeftFromLine,
+  ArrowRightToLine,
+  Cloud,
 } from 'lucide-react';
-import { getLocalePhrase, Phrase } from 'localisation/translations';
+import { getLocalePhrase } from 'localisation/translations';
 import { VideoCategory } from '../types/VideoCategory';
 import SearchBar from './SearchBar';
 import VideoMarkerToggles from './VideoMarkerToggles';
@@ -35,16 +37,18 @@ import MultiPovPlaybackToggles from './MultiPovPlaybackToggles';
 import VideoFilter from './VideoFilter';
 import { Resizable, ResizeCallback } from 're-resizable';
 import { Direction } from 're-resizable/lib/resizer';
-import VideoPlayer from './VideoPlayer';
+import VideoPlayer, { VideoPlayerRef } from './VideoPlayer';
 import Label from './components/Label/Label';
-import { Popover, PopoverContent } from './components/Popover/Popover';
-import { PopoverTrigger } from '@radix-ui/react-popover';
 import ViewpointSelection from './components/Viewpoints/ViewpointSelection';
 import useTable from './components/Tables/TableData';
 import { Tooltip } from './components/Tooltip/Tooltip';
 import DateRangePicker from './DateRangePicker';
 import StorageFilterToggle from './StorageFilterToggle';
 import VideoCorrelator from './VideoCorrelator';
+import { Phrase } from 'localisation/phrases';
+import BulkTransferDialog from './BulkTransferDialog';
+import VideoChat from './VideoChat';
+import ConfirmChatNamePrompt from './ConfirmChatNamePrompt';
 
 interface IProps {
   category: VideoCategory;
@@ -75,9 +79,9 @@ const CategoryPage = (props: IProps) => {
     videoFilterTags,
     language,
     dateRangeFilter,
-    viewpointSelectionOpen,
     cloudStatus,
     storageFilter,
+    chatOpen,
   } = appState;
 
   const { write, del } = cloudStatus;
@@ -111,6 +115,7 @@ const CategoryPage = (props: IProps) => {
 
   // Handle to reset the video player height.
   const resizableRef = useRef<Resizable>(null);
+  const videoPlayerRef = useRef<VideoPlayerRef>(null);
 
   useEffect(() => {
     const handleWindowResize = () => {
@@ -138,6 +143,37 @@ const CategoryPage = (props: IProps) => {
     };
   }, [playerHeight]);
 
+  const renderChat = (video: RendererVideo | undefined) => {
+    if (!video) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center text-foreground text-sm font-bold">
+          <Cloud size={35} className="mb-2" />
+          {getLocalePhrase(language, Phrase.ChatUploadToCloudText)}
+        </div>
+      );
+    }
+
+    if (config.cloudAccountName !== config.chatUserNameAgreed) {
+      return (
+        <ConfirmChatNamePrompt
+          cloudAccountName={config.cloudAccountName}
+          setConfig={setConfig}
+          language={language}
+        />
+      );
+    }
+
+    return (
+      <VideoChat
+        key={video.videoName}
+        videoPlayerRef={videoPlayerRef}
+        video={video}
+        language={language}
+        deletePermissions={del}
+      />
+    );
+  };
+
   /**
    * Handle a resize event.
    */
@@ -148,6 +184,63 @@ const CategoryPage = (props: IProps) => {
   ) => {
     const height = element.clientHeight;
     playerHeight.current = height;
+  };
+
+  const renderDrawerOpen = () => {
+    // Only the first row in the selection is relevant for the drawer display.
+    const selectedRows = table.getSelectedRowModel().rows;
+    const selectedRow = selectedRows[0];
+
+    const activeParentVideo = selectedRow
+      ? selectedRow.original
+      : filteredState[0];
+
+    // Only try to find a chat video if we have a video with cloud storage,
+    // a start time and a hash, else we cannot find the chat correlator.
+    const chatVideo = [activeParentVideo, ...activeParentVideo.multiPov].find(
+      (rv) => rv.cloud && rv.uniqueHash && rv.start,
+    );
+
+    return (
+      <div className="max-w-[500px] min-w-[500px] h-full bg-background-higher flex flex-col mx-2 gap-y-2">
+        <div className="flex items-start">
+          <Button
+            onClick={() =>
+              setAppState((prev) => ({ ...prev, chatOpen: false }))
+            }
+            variant="ghost"
+            className="mt-2"
+            size="xs"
+          >
+            <ArrowRightToLine size={18} />
+          </Button>
+        </div>
+        <div className="flex items-center justify-center w-full">
+          <ViewpointSelection
+            video={activeParentVideo}
+            appState={appState}
+            setAppState={setAppState}
+            persistentProgress={persistentProgress}
+          />
+        </div>
+        {renderChat(chatVideo)}
+      </div>
+    );
+  };
+
+  const renderDrawerClosed = () => {
+    return (
+      <div className="h-full relative">
+        <Button
+          onClick={() => setAppState((prev) => ({ ...prev, chatOpen: true }))}
+          variant="ghost"
+          className="absolute top-0 right-0 m-2"
+          size="xs"
+        >
+          <ArrowLeftFromLine size={18} />
+        </Button>
+      </div>
+    );
   };
 
   /**
@@ -174,6 +267,7 @@ const CategoryPage = (props: IProps) => {
         enable={{ bottom: true }}
         bounds="parent"
         onResize={onResize}
+        minHeight={chatOpen ? 500 : undefined}
         handleStyles={{
           bottom: {
             width: '50%',
@@ -189,15 +283,21 @@ const CategoryPage = (props: IProps) => {
           bottom: <GripHorizontal />,
         }}
       >
-        <VideoPlayer
-          key={videosToPlay.map((rv) => rv.videoName + rv.cloud).join(', ')}
-          videos={videosToPlay}
-          categoryState={categoryState}
-          persistentProgress={persistentProgress}
-          config={config}
-          appState={appState}
-          setAppState={setAppState}
-        />
+        <div className="flex h-full w-full">
+          <VideoPlayer
+            ref={videoPlayerRef}
+            key={videosToPlay.map((rv) => rv.videoName + rv.cloud).join(', ')}
+            videos={videosToPlay}
+            categoryState={categoryState}
+            persistentProgress={persistentProgress}
+            config={config}
+            appState={appState}
+            setAppState={setAppState}
+          />
+
+          {chatOpen && renderDrawerOpen()}
+          {!chatOpen && renderDrawerClosed()}
+        </div>
       </Resizable>
     );
   };
@@ -357,6 +457,57 @@ const CategoryPage = (props: IProps) => {
       );
     };
 
+    const renderBulkTransferButton = (upload: boolean) => {
+      const toTransfer = selectedViewpoints
+        .filter((rv) => rv.cloud === !upload)
+        .filter(
+          (rv) =>
+            selectedViewpoints.filter((v) => v.videoName === rv.videoName)
+              .length < 2, // If we have more 2 viewpoints with the same name then one must be disk and one cloud.
+        );
+
+      const noPermission = upload && !write;
+
+      const disabled =
+        toTransfer.length < 1 || noPermission || !cloudStatus.authorized;
+
+      let tooltip = upload
+        ? getLocalePhrase(language, Phrase.BulkUploadButtonTooltip)
+        : getLocalePhrase(language, Phrase.BulkDownloadButtonTooltip);
+
+      if (noPermission) {
+        tooltip = getLocalePhrase(language, Phrase.GuildNoPermission);
+      }
+
+      const icon = upload ? (
+        <CloudUpload size={18} />
+      ) : (
+        <CloudDownload size={18} />
+      );
+
+      return (
+        <Tooltip content={tooltip}>
+          <div>
+            <BulkTransferDialog
+              key={toTransfer.map((v) => v.videoName).join(',')} // Forces a remount on selection change.
+              inScope={toTransfer}
+              appState={appState}
+              upload={upload}
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={disabled}
+                className="border border-background"
+              >
+                {icon}
+              </Button>
+            </BulkTransferDialog>
+          </div>
+        </Tooltip>
+      );
+    };
+
     const renderSelectionLabel = () => {
       const { language } = appState;
       let text = getLocalePhrase(language, Phrase.Selection);
@@ -372,65 +523,6 @@ const CategoryPage = (props: IProps) => {
       }
 
       return <Label>{text}</Label>;
-    };
-
-    const renderViewpointSelectionPopover = () => {
-      return (
-        <Popover
-          open={viewpointSelectionOpen}
-          onOpenChange={() => {
-            setAppState((a) => {
-              return {
-                ...a,
-                viewpointSelectionOpen: !a.viewpointSelectionOpen,
-              };
-            });
-          }}
-        >
-          <PopoverTrigger asChild className="absolute top-[90px] left-0">
-            <Button
-              variant={viewpointSelectionOpen ? 'default' : 'secondary'}
-              size="xs"
-              className="z-10 h-20 rounded-l-none flex justify-start p-[3px]"
-            >
-              <Eye size={15} />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            onEscapeKeyDown={(e) => {
-              // Close the popover when escape is pressed.
-              setAppState((a) => {
-                return {
-                  ...a,
-                  viewpointSelectionOpen: false,
-                };
-              });
-
-              // Need this for some reason else the popover doesn't close.
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            side="left"
-            className="p-0 absolute top-[-40px] left-[30px] w-auto min-w-max"
-            onInteractOutside={(e) => {
-              e.preventDefault();
-            }}
-            onPointerDownOutside={(e) => {
-              e.preventDefault();
-            }}
-            onFocusOutside={(e) => {
-              e.preventDefault();
-            }}
-          >
-            <ViewpointSelection
-              video={selectedRow ? selectedRow.original : filteredState[0]}
-              appState={appState}
-              setAppState={setAppState}
-              persistentProgress={persistentProgress}
-            />
-          </PopoverContent>
-        </Popover>
-      );
     };
 
     return (
@@ -480,12 +572,13 @@ const CategoryPage = (props: IProps) => {
           <div>
             {renderSelectionLabel()}
             <div className="flex gap-x-1 mr-2 py-[1px]">
+              {config.cloudUpload && renderBulkTransferButton(true)}
+              {config.cloudStorage && renderBulkTransferButton(false)}
               {renderProtectButton()}
               {renderDeleteButton()}
             </div>
           </div>
         </div>
-        <div className="relative">{renderViewpointSelectionPopover()}</div>
         <div className="w-full h-full overflow-hidden">
           <VideoSelectionTable
             table={table}
@@ -500,7 +593,7 @@ const CategoryPage = (props: IProps) => {
 
   const openSetupInstructions = () => {
     window.electron.ipcRenderer.sendMessage('openURL', [
-      'https://github.com/aza547/wow-recorder#readme',
+      'https://www.warcraftrecorder.com/about',
     ]);
   };
 

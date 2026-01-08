@@ -5,9 +5,7 @@
 
 Warcraft Recorder is a desktop screen recorder. It watches the WoW combat log file for interesting events, records them, and presents a user interface in which the recordings can be viewed. 
 
-![](https://i.imgur.com/LlOA5zr.png)
-![](https://i.imgur.com/8P51hjK.png)
-![](https://i.imgur.com/DT6KftO.png)
+<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/aea579e3-5a7f-477d-bea0-273556a3ef9b" />
 
 #  How to Use
 1. Download and run the most recent [Warcraft Recorder installer](https://github.com/aza547/wow-recorder/releases/latest).
@@ -37,13 +35,11 @@ Warcraft Recorder is a desktop screen recorder. It watches the WoW combat log fi
 | Flavour | Support |
 |---|---|
 | Retail | Yes |
-| WotLK Classic | Yes |
+| MoP Classic | Yes |
 | Classic Era | SoD Raids Only |
 
 # Testing It Works
 You can test that Warcraft Recorder works by clicking the test icon with World of Warcraft running after you have completed the above setup steps. This runs a short test of the recording function.
-
-![](https://i.imgur.com/RJcMPNI.png)
 
 # Bug Reports & Suggestions
 
@@ -58,8 +54,6 @@ If you're interested in getting involved please drop me a message on discord and
 # Mentions
 
 The recording done by Warcraft Recorder is made possible by packaging up [OBS](https://obsproject.com/). We wouldn't stand a chance at providing something useful without it. Big thanks to the OBS developers.
-
-This application is also heavily reliant on [OBS Studio Node](https://github.com/stream-labs/obs-studio-node) to provide bindings to libOBS. Special mention for the folks over at [Streamlabs](https://streamlabs.com/) for open-sourcing the project. 
 
 The app is built with [Electron](https://www.electronjs.org/) and [React](https://react.dev/), using the boilerplate provided by the [ERB](https://electron-react-boilerplate.js.org/) project. 
 

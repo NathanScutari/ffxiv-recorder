@@ -1,7 +1,7 @@
 import { AppState, RendererVideo } from 'main/types';
 import { KeyboardEventHandler, useEffect, useRef, useState } from 'react';
 import { getLocalePhrase } from 'localisation/translations';
-import { Phrase } from 'localisation/types';
+import { Phrase } from 'localisation/phrases';
 import VideoFilter from './VideoFilter';
 import Label from './components/Label/Label';
 import {
@@ -311,7 +311,7 @@ const SearchBar = (props: IProps) => {
     tagName: 'react-tags__tag-name',
     comboBox: 'react-tags__combobox',
     input: 'react-tags__combobox-input mx-2 placeholder:text-foreground',
-    listBox: 'react-tags__listbox  bg-card rounded-md border border-background',
+    listBox: 'react-tags__listbox  bg-card rounded-md border border-background scrollbar-thin',
     option: 'react-tags__listbox-option',
     optionIsActive: 'is-active',
     highlight: 'react-tags__listbox-option-highlight',

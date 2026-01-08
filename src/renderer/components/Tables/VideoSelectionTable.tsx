@@ -17,8 +17,9 @@ import {
 } from 'lucide-react';
 import { povDiskFirstNameSort } from '../../rendererutils';
 import { Button } from '../Button/Button';
-import { getLocalePhrase, Phrase } from 'localisation/translations';
+import { getLocalePhrase } from 'localisation/translations';
 import { ScrollArea } from '../ScrollArea/ScrollArea';
+import { Phrase } from 'localisation/phrases';
 
 interface IProps {
   table: Table<RendererVideo>;
@@ -33,7 +34,12 @@ interface IProps {
  */
 const VideoSelectionTable = (props: IProps) => {
   const { appState, setAppState, persistentProgress, table } = props;
-  const { videoFilterTags, dateRangeFilter, storageFilter } = appState;
+  const {
+    videoFilterTags,
+    dateRangeFilter,
+    storageFilter,
+    preferredViewpoint,
+  } = appState;
 
   /**
    * Mark the row as selected and update the video player to play the first
@@ -74,6 +80,17 @@ const VideoSelectionTable = (props: IProps) => {
 
       const video = row.original;
       const povs = [video, ...video.multiPov].sort(povDiskFirstNameSort);
+
+      let toSelect: RendererVideo | undefined;
+
+      if (preferredViewpoint) {
+        toSelect = povs.find((pov) => pov.player?._name === preferredViewpoint);
+      }
+
+      if (!toSelect) {
+        toSelect = povs[0];
+      }
+
       persistentProgress.current = 0;
 
       // It's a regular click, so unselect any other selected rows.
@@ -90,12 +107,12 @@ const VideoSelectionTable = (props: IProps) => {
 
       setAppState((prevState) => ({
         ...prevState,
-        selectedVideos: povs[0] ? [povs[0]] : [],
+        selectedVideos: toSelect ? [toSelect] : [],
         multiPlayerMode: false,
         playing: false,
       }));
     },
-    [persistentProgress, setAppState, table],
+    [persistentProgress, setAppState, table, preferredViewpoint],
   );
 
   /**
@@ -235,13 +252,17 @@ const VideoSelectionTable = (props: IProps) => {
   /**
    * Render the base row.
    */
-  const renderBaseRow = (row: Row<RendererVideo>, selected: boolean) => {
+  const renderBaseRow = (
+    row: Row<RendererVideo>,
+    selected: boolean,
+    sortedIndex: number,
+  ) => {
     const cells = row.getVisibleCells();
     let className = 'cursor-pointer hover:bg-secondary/80 ';
 
     if (selected) {
       className += 'bg-secondary/100 ';
-    } else if (row.index % 2 === 0) {
+    } else if (sortedIndex % 2 === 0) {
       className += 'bg-secondary/15 ';
     }
 
@@ -259,20 +280,21 @@ const VideoSelectionTable = (props: IProps) => {
   /**
    * Render an individual row of the table.
    */
-  const renderRow = (row: Row<RendererVideo>) => {
+  const renderRow = (row: Row<RendererVideo>, sortedIndex: number) => {
     const selected =
       row.getIsSelected() ||
       (!table.getIsSomeRowsSelected() && row.index === 0);
 
-    return <Fragment key={row.id}>{renderBaseRow(row, selected)}</Fragment>;
+    return (
+      <Fragment key={row.id}>
+        {renderBaseRow(row, selected, sortedIndex)}
+      </Fragment>
+    );
   };
 
-  /**
-   * Render the body of the selection table.
-   */
   const renderTableBody = () => {
     const { rows } = table.getRowModel();
-    return <tbody>{rows.map(renderRow)}</tbody>;
+    return <tbody>{rows.map((row, i) => renderRow(row, i))}</tbody>;
   };
 
   /**
@@ -332,7 +354,7 @@ const VideoSelectionTable = (props: IProps) => {
   return (
     <div className="w-full h-full overflow-hidden px-2">
       <ScrollArea withScrollIndicators={false} className="h-full w-full">
-        <div className="pb-2 px-6">
+        <div className="pb-2 px-4">
           <table className="table-fixed w-full">
             {renderTableHeader()}
             {renderTableBody()}

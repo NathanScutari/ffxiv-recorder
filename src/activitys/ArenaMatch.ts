@@ -1,7 +1,6 @@
 import Combatant from 'main/Combatant';
 import { getLocalePhrase } from '../localisation/translations';
-import { Language, Phrase } from '../localisation/types';
-import { IConfigService } from '../config/ConfigService';
+import { Language, Phrase } from '../localisation/phrases';
 import { Flavour, Metadata } from '../main/types';
 import { classicArenas, retailArenas } from '../main/constants';
 import Activity from './Activity';
@@ -16,9 +15,8 @@ export default class ArenaMatch extends Activity {
     category: VideoCategory,
     zoneID: number,
     flavour: Flavour,
-    cfg: IConfigService,
   ) {
-    super(startDate, category, flavour, cfg);
+    super(startDate, category, flavour);
     this._zoneID = zoneID;
     this.overrun = 3;
   }
@@ -127,5 +125,26 @@ export default class ArenaMatch extends Activity {
     }
 
     return fileName;
+  }
+
+  addCombatant(combatant: Combatant) {
+    super.addCombatant(combatant);
+
+    if (this.flavour === Flavour.Classic) {
+      // For classic, we need to determine the arena category based on the
+      // number of combatants. So update it now.
+      const combatantMapSize = this.combatantMap.size;
+
+      if (combatantMapSize < 5) {
+        console.log('[ArenaMatch] Setting arena category to 2v2');
+        this.category = VideoCategory.TwoVTwo;
+      } else if (combatantMapSize < 7) {
+        console.log('[ArenaMatch] Setting arena category to 3v3');
+        this.category = VideoCategory.ThreeVThree;
+      } else {
+        console.log('[ArenaMatch] Setting arena category to 5v5');
+        this.category = VideoCategory.FiveVFive;
+      }
+    }
   }
 }

@@ -11,3 +11,13 @@ export const Affiliation = z.object({
 });
 
 export type TAffiliation = z.infer<typeof Affiliation>;
+
+export const ChatMessageWithId = z.object({
+  id: z.number(),
+  correlator: z.string(),
+  userName: z.string(),
+  message: z.string(),
+  timestamp: z.number(),
+});
+
+export type TChatMessageWithId = z.infer<typeof ChatMessageWithId>;

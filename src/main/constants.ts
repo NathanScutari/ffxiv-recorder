@@ -1,4 +1,4 @@
-import { Phrase } from '../localisation/types';
+import { Phrase } from '../localisation/phrases';
 import { VideoCategory } from '../types/VideoCategory';
 import { ConfigurationSchemaKey } from '../config/configSchema';
 
@@ -93,6 +93,10 @@ const categoryRecordingSettings: Omit<
     allowRecordKey: 'recordBattlegrounds',
     autoUploadKey: 'cloudUploadBattlegrounds',
   },
+  [VideoCategory.Manual]: {
+    allowRecordKey: 'manualRecord',
+    autoUploadKey: 'manualRecordUpload',
+  },
 };
 
 /**
@@ -167,6 +171,7 @@ const retailArenas: NumberKeyToStringValueMapType = {
   2547: 'Enigma Crucible',
   2563: 'Nokhudon',
   2759: 'Cage of Carnage',
+  2923: 'Voidscar Arena', // https://github.com/BigWigsMods/BigWigs/blob/master/Loader.lua#L638
 };
 
 /**
@@ -177,6 +182,8 @@ const classicArenas: NumberKeyToStringValueMapType = {
   559: 'Nagrand',
   617: 'Dalaran',
   562: "Blade's Edge",
+  1134: "Tiger's Peak",
+  980: "Tol'viron",
 };
 
 /**
@@ -348,16 +355,38 @@ const raidEncountersById: NumberKeyToStringValueMapType = {
  * List of the raid encounters for the current tier of raid bosses. This
  * enables the "record current tier only" option, and needs updated with each
  * new tier.
+ *
+ * Typically will do a bit of overlap on a new tier so that we can cover PTR,
+ * and retail at the same time. Eventually the older tiers should be removed.
  */
 const currentRetailEncounters = [
-  3009, // Vexie
-  3010, // Cauldron
-  3011, // Rik
-  3012, // Stix
-  3013, // Sprocket
-  3014, // Bandit
-  3015, // Mug'Zee
-  3016, // Gally
+  // TWW Season 3
+  3129, // Plexus Sentinel
+  3131, // Loom'ithar
+  3130, // Soulbinder Naazindhri
+  3132, // Forgeweaver Araz
+  3122, // The Soul Hunters
+  3133, // Fractillus
+  3134, // Nexus-King Salhadaar
+  3135, // Dimensius, the All-Devouring
+
+  // Midnight - The Voidspire
+  3176, // Imperator Averzian
+  3177, // Vorsaius
+  3178, // Fallen-King Salhadar
+  3179, // Vaelgor & Ezzorak
+  3180, // Lightblinded Vanguard
+  3181, // Crown of the Cosmos
+
+  // Midnight - March on Quel'danas
+  3182, // Belo'ren, Child of Al'ar
+  3183, // Midnight Falls
+
+  // Midnight - The Dreamrift
+  3306, // Chimaerus the Undreamt God
+
+  // Test Encounter
+  9999, // Saves having to update the test button data.
 ];
 
 /**
@@ -501,6 +530,20 @@ const dungeonsByZoneId: NumberKeyToStringValueMapType = {
   2661: 'Cinderbrew Meadery',
   2773: 'Operation: Floodgate',
   1594: 'THE MOTHERLODE!!',
+
+  // TWW S3.
+  // Taken from https://github.com/BigWigsMods/BigWigs/blob/master/Loader.lua#L487.
+  2830: "Eco-Dome Al'Dani",
+
+  // Midnight S1.
+  // Taken from https://github.com/BigWigsMods/BigWigs/blob/master/Loader.lua#L487.
+  2805: 'Windrunner Spire',
+  2811: "Magisters' Terrace",
+  2813: 'Murder Row',
+  2825: 'Den of Nalorakk',
+  2859: 'The Blinding Vale',
+  2874: 'Maisara Caverns',
+  2915: 'Nexus-Point Xenas',
 };
 
 /**
@@ -572,6 +615,18 @@ const dungeonsByMapId: NumberKeyToStringValueMapType = {
   506: 'Cinderbrew Meadery',
   247: 'THE MOTHERLODE!!',
   525: 'Operation: Floodgate',
+
+  // TWW S3 - taken from WoWhead, searching for "set keystone map X".
+  542: "Eco-Dome Al'Dani",
+
+  // Midnight Season 1 - taken from WoWhead, searching for "set keystone map X".
+  558: "Magister's Terrace",
+  560: 'Maisara Caverns',
+  559: 'Nexus-Point Xenas',
+  557: 'Windrunner Spire',
+  556: 'Pit of Saron',
+  239: 'Seat of the Triumvirate',
+  161: 'Skyreach',
 };
 
 /**
@@ -587,7 +642,7 @@ const dungeonsByMapId: NumberKeyToStringValueMapType = {
 const dungeonTimersByMapId: { [id: number]: number[] } = {
   // Shadowlands
   377: [43 * 60, 34 * 60 + 25, 25 * 60 + 49],
-  378: [32 * 60, 25 * 60 + 36, 19 * 60 + 12],
+  378: [32 * 60, 32 * 60 * 0.8, 32 * 60 * 0.6], // Halls of Atonement
   375: [30 * 60, 24 * 60, 18 * 60], // Mists of Tirna Scithe
   379: [38 * 60, 30 * 60 + 24, 22 * 60 + 38],
   380: [41 * 60, 32 * 60 + 48, 24 * 60 + 36],
@@ -598,8 +653,8 @@ const dungeonTimersByMapId: { [id: number]: number[] } = {
   234: [35 * 60, 28 * 60, 21 * 60],
   369: [38 * 60, 30 * 60 + 24, 22 * 60 + 38],
   370: [32 * 60, 25 * 60 + 36, 19 * 60 + 12], // Operation: Mechagon - Workshop
-  391: [39 * 60, 31 * 60 + 12, 23 * 60 + 24],
-  392: [30 * 60, 24 * 60, 18 * 60],
+  391: [35 * 60, 35 * 60 * 0.8, 35 * 60 * 0.6], // Tazavesh: Streets of Wonder
+  392: [30 * 60, 24 * 60, 18 * 60], // Tazavesh: So'leah's Gambit
   169: [30 * 60, 24 * 60, 18 * 60],
   166: [30 * 60, 24 * 60, 18 * 60],
 
@@ -652,6 +707,20 @@ const dungeonTimersByMapId: { [id: number]: number[] } = {
   499: [32 * 60 + 30, 26 * 60, 19 * 60 + 30], // 'Priory of the Sacred Flame'
   525: [33 * 60, 26 * 60 + 24, 19 * 60 + 48], // 'Operation: Floodgate'
   247: [33 * 60, 33 * 60 * 0.8, 33 * 60 * 0.6], // 'THE MOTHERLODE!!'
+
+  // TWW S3
+  // Timings from https://www.wowhead.com/guide/mythic-plus-dungeons/the-war-within-season-3/overview.
+  542: [31 * 60, 31 * 60 * 0.8, 31 * 60 * 0.6], // "Eco-Dome Al'Dani"
+
+  // Midnight S1
+  // TODO: Timers need to be updated. Currently using placeholders.
+  558: [30 * 60, 25 * 60, 20 * 60], // Magister's Terrace
+  560: [30 * 60, 25 * 60, 20 * 60], // Maisara Caverns
+  559: [30 * 60, 25 * 60, 20 * 60], // Nexus-Point Xenas
+  557: [30 * 60, 25 * 60, 20 * 60], // Windrunner Spire
+  556: [30 * 60, 25 * 60, 20 * 60], // Pit of Saron
+  239: [30 * 60, 25 * 60, 20 * 60], // Seat of the Triumvirate
+  161: [30 * 60, 25 * 60, 20 * 60], // Skyreach
 };
 
 // Useful database for grabbing this stuff:
@@ -964,6 +1033,50 @@ const dungeonEncounters: NumberKeyToStringValueMapType = {
   2106: 'Azerokk',
   2107: 'Rixxa Fluxflame',
   2108: 'Mogul Razdunk',
+
+  // Eco-Dome Al'Dani
+  3107: 'Azhiccar',
+  3108: "Taah'bat and A'wazj",
+  3109: 'Soul-Scribe',
+
+  // Magister's Terrace
+  3071: 'Arcanotron Custos',
+  3073: 'Gemellus',
+  3072: 'Seranel Sunlash',
+  3074: 'Degentrius',
+
+  // Maisara Caverns
+  3212: "Muro'jin and Nekraxx",
+  3214: "Rak'tul, Vessel of Souls",
+  3213: 'Vordaza',
+
+  // Nexus-Point Xenas
+  3328: 'Chief Corewright Kasreth',
+  3332: 'Corewarden Nysarra',
+  3333: 'Lothraxion',
+
+  // Windrunner Spire
+  3058: 'Commander Kroluk',
+  3057: 'Derelict Duo',
+  3056: 'Emberdawn',
+  3059: 'The Restless Heart',
+
+  // Pit of Saron
+  1999: 'Forgemaster Garfrost',
+  2001: 'Ick and Krick',
+  2000: 'Scourgelord Tyrannus',
+
+  // Seat of the Triumvirate
+  2068: "L'ura",
+  2066: 'Saprish',
+  2067: 'Viceroy Nezhar',
+  2065: 'Zuraal the Ascended',
+
+  // Skyreach
+  1699: 'Araknath',
+  1701: 'High Sage Viryx',
+  1698: 'Ranjit',
+  1700: 'Rukhran',
 };
 
 const instanceNamesByZoneId: NumberKeyToStringValueMapType = {
@@ -1693,6 +1806,45 @@ const classicUniqueSpecAuras: StringKeyToNumberValueMapType = {
   'The Art of War': 70, // in classic rets are 67 but use 70 for consistency with retail
 };
 
+// Taken from https://wago.tools/db2/MapChallengeMode?build=11.0.2.55789.
+const mopChallengeModes: Record<number, string> = {
+  2: 'Temple of the Jade Serpent',
+  56: 'Stormstout Brewery',
+  57: 'Gate of the Setting Sun',
+  58: 'Shado-Pan Monastery',
+  59: 'Siege of Niuzao Temple',
+  60: "Mogu'shan Palace",
+  76: 'Scholomance',
+  77: 'Scarlet Halls',
+  78: 'Scarlet Monastery',
+};
+
+// Gold, silver, bronze timers for Mists of Pandaria challenge
+// modes. Taken from in-game Challenges panel.
+const mopChallengeModesTimers: Record<number, number[]> = {
+  2: [45, 25, 15], // Temple of the Jade Serpent
+  56: [45, 21, 12], // Stormstout Brewery
+  57: [45, 22, 13], // Gate of the Setting Sun
+  58: [60, 35, 21], // Shado-Pan Monastery
+  59: [50, 30, 17.5], // Siege of Niuzao Temple
+  60: [45, 21, 12], // Mogu'shan Palace
+  76: [55, 33, 19], // Scholomance
+  77: [45, 25, 13], // Scarlet Halls
+  78: [45, 22, 13], // Scarlet Monastery
+};
+
+const wowInstallSearchPaths = [
+  'C:\\World of Warcraft',
+  'C:\\Program Files\\World of Warcraft',
+  'C:\\Program Files (x86)\\World of Warcraft',
+  'D:\\World of Warcraft',
+  'D:\\Program Files\\World of Warcraft',
+  'D:\\Program Files (x86)\\World of Warcraft',
+  'E:\\World of Warcraft',
+  'E:\\Program Files\\World of Warcraft',
+  'E:\\Program Files (x86)\\World of Warcraft',
+];
+
 export {
   months,
   categoryTabSx,
@@ -1724,4 +1876,7 @@ export {
   WoWClassColor,
   scrollBarSx,
   currentRetailEncounters,
+  mopChallengeModes,
+  mopChallengeModesTimers,
+  wowInstallSearchPaths,
 };

@@ -1,5 +1,5 @@
 import { CellContext } from '@tanstack/react-table';
-import { AppState, RendererVideo } from 'main/types';
+import { CloudStatus, RendererVideo } from 'main/types';
 import {
   getVideoResultText,
   getResultColor,
@@ -18,7 +18,7 @@ import {
 } from 'renderer/rendererutils';
 import { Box, Checkbox } from '@mui/material';
 import { affixImages, specImages } from 'renderer/images';
-import { Language, Phrase } from 'localisation/types';
+import { Language, Phrase } from 'localisation/phrases';
 import { Button } from '../Button/Button';
 import { Tooltip } from '../Tooltip/Tooltip';
 import { getLocalePhrase } from 'localisation/translations';
@@ -84,7 +84,8 @@ export const populateActivityCell = (
   if (isRaidUtil(video) && video.encounterName) {
     activity = video.encounterName;
   } else if (isMythicPlusUtil(video) && video.mapID) {
-    activity = getDungeonName(video);
+    const dungeonName = getDungeonName(video);
+    if (dungeonName) activity = dungeonName;
   } else if (video.zoneName) {
     activity = video.zoneName;
   }
@@ -94,11 +95,11 @@ export const populateActivityCell = (
 
 export const populateDetailsCell = (
   ctx: CellContext<RendererVideo, unknown>,
-  appState: AppState,
+  language: Language,
+  cloudStatus: CloudStatus,
   setVideoState: Dispatch<SetStateAction<RendererVideo[]>>,
 ) => {
   const video = ctx.getValue() as RendererVideo;
-  const { language, cloudStatus } = appState;
   const { write, del } = cloudStatus;
 
   const renderProtectedIcon = () => {
@@ -198,7 +199,7 @@ export const populateDetailsCell = (
             initialTag={tag}
             videos={toTag}
             setVideoState={setVideoState}
-            appState={appState}
+            language={language}
           >
             <Button variant="ghost" size="xs" disabled={noPermission}>
               {icon}
@@ -221,7 +222,7 @@ export const populateLevelCell = (
   info: CellContext<RendererVideo, unknown>,
 ) => {
   const video = info.getValue() as RendererVideo;
-  return `+${video.keystoneLevel || video.level}`;
+  return `+${video.keystoneLevel || video.level || 0}`;
 };
 
 export const populateAffixesCell = (
@@ -262,7 +263,7 @@ export const populateAffixesCell = (
 };
 
 export const populateViewpointCell = (
-  info: CellContext<RendererVideo, unknown>,
+  info: CellContext<RendererVideo, unknown>
 ) => {
   const video = info.getValue() as RendererVideo;
   const count = countUniqueViewpoints(video);
@@ -271,6 +272,7 @@ export const populateViewpointCell = (
   // local users viewpoint so most relevant to them.
   const povs = [video, ...video.multiPov].sort(povDiskFirstNameSort);
   const first = povs[0];
+
   const { player } = first;
 
   if (!player || !player._specID) {

@@ -57,8 +57,8 @@ export const runRetailRecordingTest = (
     return;
   }
 
-  if (!Poller.getInstanceLazy().isXIVRunning) {
-    console.info("[test] FFXIV isn't running, not starting test.");
+  if (!Poller.getInstance().isXIVRunning()) {
+    console.info("[test] WoW isn't running, not starting test.");
     return;
   }
 
@@ -128,7 +128,7 @@ export const runClassicRecordingTest = (
     return;
   }
 
-  if (!Poller.getInstanceLazy().isXIVRunning) {
+  if (!Poller.getInstance().isXIVRunning()) {
     console.info("[test] FFXIV isn't running, not starting test.");
     return;
   }

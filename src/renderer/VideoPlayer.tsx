@@ -8,9 +8,11 @@ import {
   VideoPlayerSettings,
 } from 'main/types';
 import {
+  forwardRef,
   MutableRefObject,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useRef,
   useState,
@@ -30,7 +32,7 @@ import { OnProgressProps } from 'react-player/base';
 import ReactPlayer from 'react-player';
 import screenfull from 'screenfull';
 import { ConfigurationSchema } from 'config/configSchema';
-import { getLocalePhrase, Phrase } from 'localisation/translations';
+import { getLocalePhrase } from 'localisation/translations';
 import DeathIcon from '../../assets/icon/death.png';
 import { ExcalidrawElement } from '@excalidraw/excalidraw/dist/types/excalidraw/element/types';
 import {
@@ -59,6 +61,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
 import Separator from './components/Separator/Separator';
 import { toast } from './components/Toast/useToast';
+import { Phrase } from 'localisation/phrases';
 
 interface IProps {
   videos: RendererVideo[];
@@ -97,7 +100,13 @@ const sliderBaseSx = {
   },
 };
 
-export const VideoPlayer = (props: IProps) => {
+export interface VideoPlayerRef {
+  // Exposes external seeking of the video player.
+  // For example from by clicking a timestamp in chat.
+  seekAllPlayersTo: (seconds: number) => void;
+}
+
+export const VideoPlayer = forwardRef<VideoPlayerRef, IProps>((props, ref) => {
   const {
     videos,
     persistentProgress,
@@ -116,9 +125,21 @@ export const VideoPlayer = (props: IProps) => {
   }
 
   // Reference to each player. Required to control the ReactPlayer component.
+  // Probably breaking some hook rules here and being saved by the key in the
+  // parent remounting this when videos changes. Maybe should just use 4
+  // hardcoded refs rather than this array.
   const players: MutableRefObject<ReactPlayer | null>[] = videos.map(() =>
     useRef(null),
   );
+
+  // Exposes the seekTo method so that we can seek from outside the component.
+  useImperativeHandle(ref, () => ({
+    seekAllPlayersTo(seconds: number) {
+      // Seek all players
+      players.forEach((player) => player.current?.seekTo(seconds, 'seconds'));
+      persistentProgress.current = seconds;
+    },
+  }));
 
   const numReady = useRef<number>(0);
   const progressSlider = useRef<HTMLSpanElement>(null);
@@ -155,8 +176,19 @@ export const VideoPlayer = (props: IProps) => {
   // different POVs of the same activity we want to play from the same
   // point.
   const timestamp = `#t=${persistentProgress.current}`;
-  const local = !videos[0].cloud;
-  const clippable = !multiPlayerMode && local;
+
+  // Check the category state to see if we have a cloud and/or disk
+  // copy of this video. These variables refer to the total state of
+  // the app rather than the selected video which is still either
+  // local or remote.
+  const videoName = videos[0].videoName;
+  const nameMatches = categoryState
+    .flatMap((v) => [v, ...v.multiPov])
+    .filter((v) => v.videoName === videoName);
+
+  const cloudVideo = nameMatches.find((v) => v.cloud);
+  const diskVideo = nameMatches.find((v) => !v.cloud);
+  const clippable = !multiPlayerMode && diskVideo !== undefined;
 
   // Deliberatly don't update the source when the timestamp changes. That's
   // just the initial playhead position. We only care to change sources when
@@ -613,7 +645,7 @@ export const VideoPlayer = (props: IProps) => {
    * retry happen automatically?
    */
   const onError = (e: unknown) => {
-    console.log(e);
+    console.error('Video Player Error', e);
   };
 
   /**
@@ -680,6 +712,10 @@ export const VideoPlayer = (props: IProps) => {
       throw new Error('No player reference');
     }
 
+    const safe = src.current.startsWith('https://')
+      ? src.current
+      : `vod://wcr/${src.current}`;
+
     return (
       <ReactPlayer
         id="react-player"
@@ -687,7 +723,7 @@ export const VideoPlayer = (props: IProps) => {
         height="100%"
         width="100%"
         key={src.current}
-        url={src.current}
+        url={safe}
         style={style}
         playing={playing}
         volume={volume}
@@ -825,7 +861,7 @@ export const VideoPlayer = (props: IProps) => {
             size="xs"
             disabled={disabled}
           >
-            <CloudDownload size={20} />
+            <CloudDownload size={20} color="white" />
           </Button>
         </div>
       </Tooltip>
@@ -850,7 +886,7 @@ export const VideoPlayer = (props: IProps) => {
             size="xs"
             disabled={disabled}
           >
-            <CloudUpload size={20} />
+            <CloudUpload size={20} color="white" />
           </Button>
         </div>
       </Tooltip>
@@ -867,14 +903,6 @@ export const VideoPlayer = (props: IProps) => {
       </Button>
     );
   };
-
-  const n = videos[0].videoName;
-  const nameMatches = categoryState
-    .flatMap((v) => [v, ...v.multiPov])
-    .filter((v) => v.videoName === n);
-
-  const cloudVideo = nameMatches.find((v) => v.cloud);
-  const diskVideo = nameMatches.find((v) => !v.cloud);
 
   /**
    * Set the selected videos.
@@ -995,7 +1023,7 @@ export const VideoPlayer = (props: IProps) => {
             variant="ghost"
             size="xs"
             onClick={openLocation}
-            disabled={!clippable}
+            disabled={diskVideo === undefined}
           >
             <FolderOpen size={20} color="white" />
           </Button>
@@ -1047,7 +1075,12 @@ export const VideoPlayer = (props: IProps) => {
         content={getLocalePhrase(language, Phrase.ShareLinkButtonTooltip)}
       >
         <div>
-          <Button variant="ghost" size="xs" onClick={getShareableLink}>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={getShareableLink}
+            disabled={cloudVideo === undefined}
+          >
             <Link size={20} color="white" />
           </Button>
         </div>
@@ -1088,9 +1121,11 @@ export const VideoPlayer = (props: IProps) => {
    * Make a request to the main process to clip a video.
    */
   const doClip = () => {
+    if (!diskVideo) return;
+
     const clipDuration = clipStopValue - clipStartValue;
     const clipOffset = clipStartValue;
-    const clipSource = videos[0].videoSource;
+    const clipSource = diskVideo.videoSource;
 
     ipc.sendMessage('clip', [clipSource, clipOffset, clipDuration]);
     setClipMode(false);
@@ -1173,7 +1208,7 @@ export const VideoPlayer = (props: IProps) => {
         size="xs"
         onClick={() => setIsDrawingEnabled(!isDrawingEnabled)}
       >
-        <Pencil size={20} color="white" opacity={isDrawingEnabled ? 1 : 0.2} />
+        <Pencil size={20} color={isDrawingEnabled ? '#bb4420' : 'white'} />
       </Button>
     </Tooltip>
   );
@@ -1183,7 +1218,7 @@ export const VideoPlayer = (props: IProps) => {
    */
   const renderControls = () => {
     return (
-      <div className="w-full h-10 flex flex-row justify-center items-center bg-background-dark-gradient-to border border-background-dark-gradient-to px-1 py-2">
+      <div className="w-full h-10 flex flex-row justify-center items-center bg-background-dark-gradient-to border border-background-dark-gradient-to px-1 py-2 rounded-br-sm">
         {renderPlayPause()}
         {renderVolumeButton()}
         {renderVolumeSlider()}
@@ -1196,9 +1231,10 @@ export const VideoPlayer = (props: IProps) => {
         {!multiPlayerMode && !clipMode && (
           <Separator className="mx-2" orientation="vertical" />
         )}
+        {!multiPlayerMode && !clipMode && renderOpenFolderButton()}
+        {!multiPlayerMode && !clipMode && renderGetLinkButton()}
+        <Separator className="mx-2" orientation="vertical" />
         {renderDrawingButton()}
-        {!multiPlayerMode && !clipMode && local && renderOpenFolderButton()}
-        {!multiPlayerMode && !clipMode && !local && renderGetLinkButton()}
         {!clipMode && !isClip(videos[0]) && renderClipButton()}
         {!multiPlayerMode && !clipMode && (
           <Separator className="mx-2" orientation="vertical" />
@@ -1318,22 +1354,15 @@ export const VideoPlayer = (props: IProps) => {
     );
   };
 
-  return (
-    <div id="player-and-controls" className="w-full h-full">
-      <div style={{ height: 'calc(100% - 40px)' }}>
-        <div className="w-full h-full relative">
-          <div className={playerDivClass}>{srcs.map(renderPlayer)}</div>
-          {isDrawingEnabled && renderDrawingOverlay()}
-        </div>
-      </div>
-
+  const renderLoadingSpinner = () => {
+    return (
       <Backdrop
         sx={{
           position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
-          bottom: '40px',
+          bottom: 0,
           zIndex: 1,
           backgroundColor: 'rgba(0, 0, 0, 0.5)',
         }}
@@ -1341,10 +1370,23 @@ export const VideoPlayer = (props: IProps) => {
       >
         <CircularProgress color="inherit" />
       </Backdrop>
+    );
+  };
+
+  return (
+    <div id="player-and-controls" className="w-full h-full">
+      <div style={{ height: 'calc(100% - 40px)' }}>
+        <div className="w-full h-full relative">
+          <div className={playerDivClass}>{srcs.map(renderPlayer)}</div>
+          {isDrawingEnabled && renderDrawingOverlay()}
+          {renderLoadingSpinner()}
+        </div>
+      </div>
 
       {renderControls()}
     </div>
   );
-};
+});
+VideoPlayer.displayName = 'VideoPlayer';
 
 export default VideoPlayer;

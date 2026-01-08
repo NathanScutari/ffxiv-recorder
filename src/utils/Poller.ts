@@ -2,74 +2,74 @@ import EventEmitter from 'events';
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import path from 'path';
 import { app } from 'electron';
-import { FlavourConfig } from '../main/types';
+import ConfigService from 'config/ConfigService';
+import { WowProcessEvent } from 'main/types';
 
 /**
- * The Poller singleton periodically checks the list of WoW active processes.
- * If the state changes, it emits either a 'xivProcessStart' or
- * 'wowProcessStop' event.
+ * The Poller singleton periodically checks the list of WoW active
+ * processes. If the state changes, it emits a WowProcessEvent.
  */
 export default class Poller extends EventEmitter {
-  private _isXIVRunning = false;
+  /**
+   * Singleton instance.
+   */
+  private static instance: Poller;
+  
 
-  private _pollInterval: NodeJS.Timer | undefined;
+  /**
+   * Config service handle.
+   */
+  private cfg: ConfigService = ConfigService.getInstance();
 
+  /**
+   * If a WoW process is running AND the corresponding record config is
+   * enabled. Includes various flavours of retail, classic and era.
+   */
+  private wowRunning = false;
+
+  private xivRunning = false;
+
+  /**
+   * Spawned child process.
+   */
   private child: ChildProcessWithoutNullStreams | undefined;
 
-  private static _instance: Poller;
+  /**
+   * Singleton instance.
+   */
+  private binary = app.isPackaged
+    ? path.join(process.resourcesPath, 'binaries', 'rust-ps.exe')
+    : path.join(__dirname, '../../binaries', 'rust-ps.exe');
 
-  private flavourConfig: FlavourConfig;
-
-  private binary = 'rust-ps.exe';
-
-  private binaryPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'binaries', this.binary)
-    : path.join(__dirname, '../../binaries', this.binary);
-
-  static getInstance(flavourConfig: FlavourConfig) {
-    if (!Poller._instance) {
-      Poller._instance = new Poller(flavourConfig);
-    }
-
-    return Poller._instance;
+  /**
+   * Create or get the singleton.
+   */
+  static getInstance() {
+    if (!Poller.instance) Poller.instance = new Poller();
+    return Poller.instance;
   }
 
-  static getInstanceLazy() {
-    if (!Poller._instance) {
-      throw new Error('[Poller] Must create poller first');
-    }
-
-    return Poller._instance;
-  }
-
-  private constructor(flavourConfig: FlavourConfig) {
+  /**
+   * Private constructor as part of the singleton pattern.
+   */
+  private constructor() {
     super();
-    this.flavourConfig = flavourConfig;
   }
 
-  get isXIVRunning() {
-    return this._isXIVRunning;
+  /**
+   * Convienence method to check if WoW is running. Only returns true if WoW
+   * is running, and the configuration is setup to record that flavour of WoW.
+   */
+  public isXIVRunning() {
+    return this.xivRunning;
   }
 
-  set isXIVRunning(value) {
-    this._isXIVRunning = value;
-  }
-
-  get pollInterval() {
-    return this._pollInterval;
-  }
-
-  set pollInterval(value) {
-    this._pollInterval = value;
-  }
-
-  reconfigureFlavour(flavourConfig: FlavourConfig) {
-    this.flavourConfig = flavourConfig;
-  }
-
-  reset() {
-    console.info('[Poller] Reset process poller');
-    this.isXIVRunning = false;
+  /**
+   * Stop the poller and reset the state.
+   */
+  public stop() {
+    console.info('[Poller] Stop process poller');
+    this.wowRunning = false;
 
     if (this.child) {
       this.child.kill();
@@ -77,49 +77,63 @@ export default class Poller extends EventEmitter {
     }
   }
 
-  start() {
+  /**
+   * Start the poller.
+   */
+  public start() {
+    this.stop();
     console.info('[Poller] Start process poller');
-    this.reset();
-    this.poll();
-  }
 
-  private poll = async () => {
-    this.child = spawn(this.binaryPath);
+    this.child = spawn(this.binary);
     this.child.stdout.on('data', this.handleStdout);
     this.child.stderr.on('data', this.handleStderr);
-  };
+  }
 
-  private handleStdout = (data: any) => {
+  /**
+   * Handle stdout data from the child process, this is a tiny blob of JSON
+   * in the format {"Retail":true, "Classic":false}.
+   *
+   * We don't care to do anything better in the scenario of multiple processes
+   * running. We don't support users multi-boxing.
+   */
+  private handleStdout = (data: string) => {
+    let parsed;
+
     try {
       const json = JSON.parse(data.toString().trim());
 
       const { FFXIV } = json;
-      const { recordFFXIV } =
-        this.flavourConfig;
+      const recordFFXIV= this.cfg.get<boolean>('recordFFXIV');
 
       const ffxivCheck = FFXIV && recordFFXIV;
 
       // We don't care to do anything better in the scenario of multiple
       // processes running. We don't support users multi-boxing.
-      if (!this.isXIVRunning && ffxivCheck) {
-        this.isXIVRunning = true;
+      if (!this.xivRunning && ffxivCheck) {
+        this.xivRunning = true;
         this.emit('xivProcessStart');
       } else if (
-        this.isXIVRunning &&
+        this.xivRunning &&
         !ffxivCheck
       ) {
-        this.isXIVRunning = false;
+        this.xivRunning = false;
         this.emit('xivProcessStop');
       }
     } catch {
       // We can hit this on sleeping/resuming from sleep. Or anything
       // else that blocks the event loop long enough to cause us to end up
-      // with more than one JSON entry.
+      // with more than one JSON entry. This used to log but it was just
+      // messy and experience has demonstrated it's never interesting.
+      return;
     }
   };
 
-  private handleStderr = (data: any) => {
-    console.warn('stderr returned from rust-ps');
+  /**
+   * Handle stderr, we don't expect to ever see this but log it incase
+   * anything weird happens.
+   */
+  private handleStderr = (data: string) => {
+    console.warn('[Poller] stderr returned from child process');
     console.error(data);
   };
 }

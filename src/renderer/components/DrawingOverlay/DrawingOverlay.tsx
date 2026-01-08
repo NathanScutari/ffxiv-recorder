@@ -3,7 +3,7 @@ import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import './DrawingOverlay.css';
 import { AppState } from 'main/types';
-import { Language } from 'localisation/types';
+import { Language } from 'localisation/phrases';
 
 interface DrawingOverlayProps {
   isDrawingEnabled: boolean;
@@ -29,7 +29,12 @@ export const DrawingOverlay: React.FC<DrawingOverlayProps> = ({
   const langCode = langCodeMap[appState.language];
 
   return (
-    <div className="drawing-overlay h-full w-full">
+    <div
+      className="drawing-overlay h-full w-full"
+      onKeyDown={(e) => {
+        e.stopPropagation();
+      }}
+    >
       <div className="drawing-overlay-content">
         <Excalidraw
           theme="dark"

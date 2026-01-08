@@ -1,12 +1,12 @@
 import {
-  ObsBaseConfig,
+  BaseConfig,
   ObsVideoConfig,
   ObsAudioConfig,
-  FlavourConfig,
   ObsOverlayConfig,
   Metadata,
   CloudConfig,
   Flavour,
+  AudioSource,
 } from 'main/types';
 import path from 'path';
 import ConfigService from '../config/ConfigService';
@@ -16,6 +16,16 @@ import {
 } from '../main/constants';
 import { VideoCategory } from '../types/VideoCategory';
 import { ESupportedEncoders } from '../main/obsEnums';
+import { Language, Phrase } from 'localisation/phrases';
+import { getLocalePhrase } from 'localisation/translations';
+import {
+  checkDisk,
+  exists,
+  getWowFlavour,
+  isFolderOwned,
+  takeOwnershipBufferDir,
+  takeOwnershipStorageDir,
+} from 'main/util';
 
 const allowRecordCategory = (cfg: ConfigService, category: VideoCategory) => {
   if (category === VideoCategory.Clips) {
@@ -142,7 +152,7 @@ const shouldUpload = (cfg: ConfigService, metadata: Metadata) => {
   return true;
 };
 
-const getObsBaseConfig = (cfg: ConfigService): ObsBaseConfig => {
+const getBaseConfig = (cfg: ConfigService): BaseConfig => {
   const storagePath = cfg.getPath('storagePath');
   let obsPath: string;
 
@@ -158,7 +168,19 @@ const getObsBaseConfig = (cfg: ConfigService): ObsBaseConfig => {
   let obsRecEncoder = cfg.get<string>('obsRecEncoder');
 
   if (obsRecEncoder === 'amd_amf_h264') {
-    obsRecEncoder = ESupportedEncoders.AMD_AMF_H264;
+    obsRecEncoder = ESupportedEncoders.AMD_H264;
+    cfg.set('obsRecEncoder', obsRecEncoder);
+  }
+
+  // The jim_nvenc encoder was deprecated in libobs. Migrate to the new version.
+  if (obsRecEncoder === 'jim_nvenc') {
+    obsRecEncoder = ESupportedEncoders.NVENC_H264;
+    cfg.set('obsRecEncoder', obsRecEncoder);
+  }
+
+  // The jim_av1_nvenc encoder was deprecated in libobs. Migrate to the new version.
+  if (obsRecEncoder === 'jim_av1_nvenc') {
+    obsRecEncoder = ESupportedEncoders.NVENC_AV1;
     cfg.set('obsRecEncoder', obsRecEncoder);
   }
 
@@ -170,6 +192,8 @@ const getObsBaseConfig = (cfg: ConfigService): ObsBaseConfig => {
     obsFPS: cfg.get<number>('obsFPS'),
     obsQuality: cfg.get<string>('obsQuality'),
     obsRecEncoder,
+    recordFFXIV: cfg.get<boolean>('recordFFXIV'),
+    xivLogPath: cfg.get<string>('xivLogPath'),
   };
 };
 
@@ -178,32 +202,22 @@ const getObsVideoConfig = (cfg: ConfigService): ObsVideoConfig => {
     obsCaptureMode: cfg.get<string>('obsCaptureMode'),
     monitorIndex: cfg.get<number>('monitorIndex'),
     captureCursor: cfg.get<boolean>('captureCursor'),
+    forceSdr: cfg.get<boolean>('forceSdr'),
+    videoSourceScale: cfg.get<number>('videoSourceScale'),
+    videoSourceXPosition: cfg.get<number>('videoSourceXPosition'),
+    videoSourceYPosition: cfg.get<number>('videoSourceYPosition'),
   };
 };
 
 const getObsAudioConfig = (cfg: ConfigService): ObsAudioConfig => {
   return {
-    /* eslint-disable prettier/prettier */
-    audioInputDevices: cfg.get<string>('audioInputDevices'),
-    audioOutputDevices: cfg.get<string>('audioOutputDevices'),
-    audioProcessDevices: cfg.get<{ value: string; label: string }[]>('audioProcessDevices'),
+    audioSources: cfg.get<AudioSource[]>('audioSources'),
+    obsAudioSuppression: cfg.get<boolean>('obsAudioSuppression'),
     obsForceMono: cfg.get<boolean>('obsForceMono'),
-    speakerVolume: cfg.get<number>('speakerVolume'),
-    micVolume: cfg.get<number>('micVolume'),
-    processVolume: cfg.get<number>('processVolume'),
     pushToTalk: cfg.get<boolean>('pushToTalk'),
     pushToTalkKey: cfg.get<number>('pushToTalkKey'),
     pushToTalkMouseButton: cfg.get<number>('pushToTalkMouseButton'),
     pushToTalkModifiers: cfg.get<string>('pushToTalkModifiers'),
-    obsAudioSuppression: cfg.get<boolean>('obsAudioSuppression'),
-    /* eslint-enable prettier/prettier */
-  };
-};
-
-const getFlavourConfig = (cfg: ConfigService): FlavourConfig => {
-  return {
-    recordFFXIV: cfg.get<boolean>('recordFFXIV'),
-    xivLogPath: cfg.get<string>('xivLogPath'),
   };
 };
 
@@ -212,19 +226,17 @@ const getOverlayConfig = (cfg: ConfigService): ObsOverlayConfig => {
     chatOverlayEnabled: cfg.get<boolean>('chatOverlayEnabled'),
     chatOverlayOwnImage: cfg.get<boolean>('chatOverlayOwnImage'),
     chatOverlayOwnImagePath: cfg.get<string>('chatOverlayOwnImagePath'),
-    chatOverlayWidth: cfg.get<number>('chatOverlayWidth'),
-    chatOverlayHeight: cfg.get<number>('chatOverlayHeight'),
     chatOverlayScale: cfg.get<number>('chatOverlayScale'),
     chatOverlayXPosition: cfg.get<number>('chatOverlayXPosition'),
     chatOverlayYPosition: cfg.get<number>('chatOverlayYPosition'),
-
-    // While not strictly overlay config, we need this to determine
-    // if it's valid to have a custom overlay (which is a paid feature).
-    cloudStorage: cfg.get<boolean>('cloudStorage'),
+    chatOverlayCropX: cfg.get<number>('chatOverlayCropX'),
+    chatOverlayCropY: cfg.get<number>('chatOverlayCropY'),
   };
 };
 
-const getCloudConfig = (cfg: ConfigService): CloudConfig => {
+const getCloudConfig = (): CloudConfig => {
+  const cfg = ConfigService.getInstance();
+
   return {
     cloudStorage: cfg.get<boolean>('cloudStorage'),
     cloudUpload: cfg.get<boolean>('cloudUpload'),
@@ -234,13 +246,100 @@ const getCloudConfig = (cfg: ConfigService): CloudConfig => {
   };
 };
 
+const getLocaleError = (phrase: Phrase) => {
+  const lang = ConfigService.getInstance().get<string>('language') as Language;
+  return getLocalePhrase(lang, phrase);
+};
+
+const validateBaseConfig = async (config: BaseConfig) => {
+  const {
+    storagePath,
+    maxStorage,
+    obsPath,
+    recordFFXIV,
+    xivLogPath,
+  } = config;
+
+  if (!storagePath) {
+    console.warn('[Manager] storagePath is falsy', storagePath);
+    const error = getLocaleError(Phrase.ErrorStoragePathInvalid);
+    throw new Error(error);
+  }
+
+  if (storagePath.includes('#')) {
+    // A user hit this: the video player loads the file path as a URL where
+    // # is interpreted as a timestamp.
+    console.warn('[Manager] storagePath contains #', storagePath);
+    const error = getLocaleError(Phrase.ErrorStoragePathInvalid);
+    throw new Error(error);
+  }
+
+  const storagePathExists = await exists(storagePath);
+
+  if (!storagePathExists) {
+    console.warn('[Manager] storagePath does not exist', storagePath);
+    const error = getLocaleError(Phrase.ErrorStoragePathInvalid);
+    throw new Error(error);
+  }
+
+  await checkDisk(storagePath, maxStorage);
+
+  if (!obsPath) {
+    console.warn('[Manager] obsPath is falsy', obsPath);
+    const error = getLocaleError(Phrase.ErrorBufferPathInvalid);
+    throw new Error(error);
+  }
+
+  const obsParentDir = path.dirname(obsPath);
+  const obsParentDirExists = await exists(obsParentDir);
+
+  if (!obsParentDirExists) {
+    console.warn('[Manager] obsPath does not exist', obsPath);
+    const error = getLocaleError(Phrase.ErrorBufferPathInvalid);
+    throw new Error(error);
+  }
+
+  if (path.resolve(storagePath) === path.resolve(obsPath)) {
+    console.warn('[Manager] storagePath is the same as obsPath');
+    const error = getLocaleError(Phrase.ErrorStoragePathSameAsBufferPath);
+    throw new Error(error);
+  }
+
+  const obsDirExists = await exists(obsPath);
+
+  // 10GB is a rough guess at what the worst case buffer directory might be.
+  if (obsDirExists) {
+    await checkDisk(obsPath, 10);
+  } else {
+    const parentDir = path.dirname(obsPath);
+    await checkDisk(parentDir, 10);
+  }
+
+  const storagePathOwned = await isFolderOwned(storagePath);
+
+  if (!storagePathOwned) {
+    await takeOwnershipStorageDir(storagePath);
+  }
+
+  if (obsDirExists && !(await isFolderOwned(obsPath))) {
+    await takeOwnershipBufferDir(obsPath);
+  }
+
+if (recordFFXIV) {
+      if (xivLogPath.length < 3) {
+        throw new Error(getLocaleError(Phrase.InvalidFFXIVLogPath));
+      }
+    }
+};
+
 export {
   allowRecordCategory,
   shouldUpload,
-  getObsBaseConfig,
+  getBaseConfig,
   getObsVideoConfig,
   getObsAudioConfig,
-  getFlavourConfig,
   getOverlayConfig,
   getCloudConfig,
+  validateBaseConfig,
+  getLocaleError,
 };

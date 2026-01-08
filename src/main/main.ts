@@ -8,25 +8,33 @@ import {
   Tray,
   Menu,
   clipboard,
+  protocol,
 } from 'electron';
 import os from 'os';
 import { uIOhook } from 'uiohook-napi';
-import { PTTKeyPressEvent } from 'types/KeyTypesUIOHook';
 import assert from 'assert';
-import { getLocalePhrase, Language, Phrase } from 'localisation/translations';
+import { getLocalePhrase, Language } from 'localisation/translations';
 import {
   resolveHtmlPath,
   openSystemExplorer,
   setupApplicationLogging,
   getAvailableDisplays,
   getAssetPath,
-  nextMousePressPromise,
-  nextKeyPressPromise,
+  handleSafeVodRequest,
+  runFirstTimeSetupActionsObs,
+  runFirstTimeSetupActionsNoObs,
 } from './util';
-import { OurDisplayType, VideoPlayerSettings } from './types';
+import { OurDisplayType, SoundAlerts, VideoPlayerSettings } from './types';
 import ConfigService from '../config/ConfigService';
 import Manager from './Manager';
 import AppUpdater from './AppUpdater';
+import MenuBuilder from './menu';
+import { Phrase } from 'localisation/phrases';
+import CloudClient from 'storage/CloudClient';
+import DiskClient from 'storage/DiskClient';
+import Poller from 'utils/Poller';
+import Recorder from './Recorder';
+import AsyncQueue from 'utils/AsyncQueue';
 
 const logDir = setupApplicationLogging();
 const appVersion = app.getVersion();
@@ -40,9 +48,9 @@ console.info('[Main] ICU version', process.versions.icu);
 console.info('[Main] On OS:', os.platform(), os.release());
 console.info('[Main] In timezone:', tz, tzOffsetStr);
 
-let mainWindow: BrowserWindow | null = null;
+let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
-let manager: Manager | undefined;
+const manager = new Manager();
 
 /**
  * Create a settings store to handle the config.
@@ -52,6 +60,17 @@ let manager: Manager | undefined;
  */
 const cfg = ConfigService.getInstance();
 
+// Don't bother to signal any changes to the frontend here, they Window isn't
+// shown yet so they can't have opened the settings.
+const firstTimeSetup = cfg.get<boolean>('firstTimeSetup');
+
+if (firstTimeSetup) {
+  // Things we want to do before we initialize OBS.
+  console.info('[Main] Run first time setup actions');
+  runFirstTimeSetupActionsNoObs();
+  cfg.set('firstTimeSetup', false); // This gets done again when we default the encoder.
+}
+
 // It's a common problem that hardware acceleration causes rendering issues.
 // Unclear why this happens and surely not an application bug but we can
 // make it easy for users to disable it if they want to.
@@ -59,6 +78,20 @@ if (!cfg.get<boolean>('hardwareAcceleration')) {
   console.info('[Main] Disabling hardware acceleration');
   app.disableHardwareAcceleration();
 }
+
+// Register the vod:// protocol as privileged. Required to securely play
+// videos from disk.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'vod',
+    privileges: {
+      bypassCSP: true,
+      standard: true,
+      stream: true,
+      supportFetchAPI: true,
+    },
+  },
+]);
 
 /**
  * Default the video player settings on app start.
@@ -107,7 +140,7 @@ const setupTray = () => {
       label: getLocalePhrase(language, Phrase.SystemTrayOpen),
       click() {
         console.info('[Main] User clicked open on tray icon');
-        if (mainWindow) mainWindow.show();
+        if (window) window.show();
       },
     },
     {
@@ -115,8 +148,8 @@ const setupTray = () => {
       click() {
         console.info('[Main] User clicked close on tray icon');
 
-        if (mainWindow) {
-          mainWindow.close();
+        if (window) {
+          window.close();
         }
       },
     },
@@ -128,8 +161,8 @@ const setupTray = () => {
   tray.on('double-click', () => {
     console.info('[Main] User double clicked tray icon');
 
-    if (mainWindow) {
-      mainWindow.show();
+    if (window) {
+      window.show();
     }
   });
 };
@@ -142,7 +175,7 @@ const createWindow = async () => {
     await installExtensions();
   }
 
-  mainWindow = new BrowserWindow({
+  window = new BrowserWindow({
     show: false,
     height: 1020 * 0.9,
     width: 1980 * 0.8,
@@ -150,63 +183,76 @@ const createWindow = async () => {
     frame: false,
     title: `FFXIV Recorder v${appVersion}`,
     webPreferences: {
-      nodeIntegration: true,
-      webSecurity: false,
+      sandbox: true, // Good security practice.
       preload: app.isPackaged
         ? path.join(__dirname, 'preload.js')
         : path.join(__dirname, '../../.erb/dll/preload.js'),
     },
   });
 
-  if (manager === undefined) {
-    manager = new Manager(mainWindow);
+  // We need to do this AFTER creating the window as it's used by the preview.
+  Recorder.getInstance().initializeObs();
+  await manager.startup();
+
+  if (firstTimeSetup) {
+    console.info('[Main] Run first time setup actions');
+    runFirstTimeSetupActionsObs();
+    cfg.set('firstTimeSetup', false);
   }
 
-  mainWindow.on('ready-to-show', async () => {
-    if (!mainWindow) {
-      throw new Error('mainWindow is not defined');
+  // This gets hit on a user triggering refresh with CTRL-R.
+  window.on('ready-to-show', async () => {
+    console.log('[Main] Ready to show');
+
+    const status = app.getGPUFeatureStatus();
+    const info = await app.getGPUInfo('complete');
+    console.info('[Main] GPU info', { status, info });
+
+    if (!window) {
+      throw new Error('window is not defined');
     }
 
     // This shows the correct version on a release build, not during development.
-    mainWindow.webContents.send(
+    window.webContents.send(
       'updateVersionDisplay',
       `FFXIV Recorder v${appVersion}`,
     );
 
-    assert(manager);
-    await manager.manage();
-
     const startMinimized = cfg.get<boolean>('startMinimized');
+    if (!startMinimized) window.show();
 
-    if (!startMinimized) {
-      mainWindow.show();
-    }
+    // Important to refresh status and videos after a user triggered
+    // refresh, otherwise the frontend will be in its default state
+    // which may not reflect reality.
+    const disk = DiskClient.getInstance();
+    const cloud = CloudClient.getInstance();
+
+    await Promise.all([
+      manager.refreshStatus(),
+      disk.refreshStatus(),
+      disk.refreshVideos(),
+      cloud.refreshStatus(),
+      cloud.refreshVideos(),
+    ]);
   });
 
-  mainWindow.on('moved', () => {
-    if (manager) {
-      manager.recorder.showPreviewMemory();
-    }
+  window.on('focus', () => {
+    window?.webContents.send('window-focus-status', true);
   });
 
-  mainWindow.on('focus', () => {
-    mainWindow?.webContents.send('window-focus-status', true);
+  window.on('blur', () => {
+    window?.webContents.send('window-focus-status', false);
   });
 
-  mainWindow.on('blur', () => {
-    mainWindow?.webContents.send('window-focus-status', false);
+  window.on('closed', () => {
+    window = null;
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
-
-  await mainWindow.loadURL(resolveHtmlPath('index.html'));
-  manager.refreshStatus();
+  await window.loadURL(resolveHtmlPath('index.html'));
   setupTray();
 
   // Open urls in the user's browser
-  mainWindow.webContents.setWindowOpenHandler((edata) => {
+  window.webContents.setWindowOpenHandler((edata) => {
     shell.openExternal(edata.url);
     return { action: 'deny' };
   });
@@ -215,35 +261,35 @@ const createWindow = async () => {
 
   // Runs the auto-updater, which checks GitHub for new releases
   // and will prompt the user if any are available.
-  new AppUpdater(mainWindow);
+  new AppUpdater(window);
 };
 
 /**
- * mainWindow event listeners.
+ * window event listeners.
  */
-ipcMain.on('mainWindow', (_event, args) => {
-  if (mainWindow === null) return;
+ipcMain.on('window', (_event, args) => {
+  if (window === null) return;
 
   if (args[0] === 'minimize') {
     console.info('[Main] User clicked minimize');
 
     if (cfg.get<boolean>('minimizeToTray')) {
       console.info('[Main] Minimize main window to tray');
-      mainWindow.webContents.send('pausePlayer');
-      mainWindow.hide();
+      window.webContents.send('pausePlayer');
+      window.hide();
     } else {
       console.info('[Main] Minimize main window to taskbar');
-      mainWindow.minimize();
+      window.minimize();
     }
   }
 
   if (args[0] === 'resize') {
     console.info('[Main] User clicked resize');
 
-    if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize();
+    if (window.isMaximized()) {
+      window.unmaximize();
     } else {
-      mainWindow.maximize();
+      window.maximize();
     }
   }
 
@@ -252,11 +298,11 @@ ipcMain.on('mainWindow', (_event, args) => {
 
     if (cfg.get<boolean>('minimizeOnQuit')) {
       console.info('[Main] Hiding main window');
-      mainWindow.webContents.send('pausePlayer');
-      mainWindow.hide();
+      window.webContents.send('pausePlayer');
+      window.hide();
     } else {
       console.info('[Main] Closing main window');
-      mainWindow.close();
+      window.close();
     }
   }
 });
@@ -265,11 +311,11 @@ ipcMain.on('mainWindow', (_event, args) => {
  * Opens a system explorer window to select a path.
  */
 ipcMain.handle('selectPath', async () => {
-  if (!mainWindow) {
+  if (!window) {
     return '';
   }
 
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await dialog.showOpenDialog(window, {
     properties: ['openDirectory'],
   });
 
@@ -285,11 +331,32 @@ ipcMain.handle('selectPath', async () => {
  * Opens a system explorer window to select a path.
  */
 ipcMain.handle('selectFile', async () => {
-  if (!mainWindow) {
+  if (!window) {
     return '';
   }
 
-  const result = await dialog.showOpenDialog(mainWindow);
+  const result = await dialog.showOpenDialog(window);
+
+  if (result.canceled) {
+    console.info('[Main] User cancelled file selection');
+    return '';
+  }
+
+  return result.filePaths[0];
+});
+
+/**
+ * Opens a system explorer window to select a path.
+ */
+ipcMain.handle('selectImage', async () => {
+  if (!window) {
+    return '';
+  }
+
+  const result = await dialog.showOpenDialog(window, {
+    properties: ['openFile'],
+    filters: [{ name: 'Images', extensions: ['gif', 'png'] }],
+  });
 
   if (result.canceled) {
     console.info('[Main] User cancelled file selection');
@@ -315,15 +382,17 @@ ipcMain.on('writeClipboard', (_event, args) => {
   clipboard.writeText(args[0] as string);
 });
 
-/**
- * Handle any settings change from the frontend.
- */
-ipcMain.on('settingsChange', () => {
-  console.info('[Main] Settings change event');
+// Enforces serial execution of calls to reconfigureBase. Also has a limit
+// of 1 queued task and will drop any extra tasks, which is appropriate for
+// deduplicating reconfigure work.
+const reconfigureBaseQueue = new AsyncQueue(1);
 
-  if (manager) {
-    manager.manage();
-  }
+/**
+ * A reconfig is triggered when a base setting changes.
+ */
+ipcMain.on('reconfigureBase', () => {
+  console.info('[Main] Queue a reconfigure');
+  reconfigureBaseQueue.add(() => manager.reconfigureBase());
 });
 
 /**
@@ -341,22 +410,33 @@ ipcMain.handle('getAllDisplays', (): OurDisplayType[] => {
   return getAvailableDisplays();
 });
 
-/**
- * Get the next key pressed by the user. This can be modifier keys, so if
- * you want to catch the next non-modifier key you may need to call this
- * a few times back to back. The event returned includes modifier details.
- */
-ipcMain.handle('getNextKeyPress', async (): Promise<PTTKeyPressEvent> => {
-  return Promise.race([nextKeyPressPromise(), nextMousePressPromise()]);
+const refreshCloudGuilds = async () => {
+  console.info('[Main] Frontend triggered cloud guilds refresh');
+  const client = CloudClient.getInstance();
+  await client.fetchAffiliations(true);
+  client.refreshStatus();
+};
+
+ipcMain.on('refreshCloudGuilds', refreshCloudGuilds);
+
+ipcMain.handle('getOrCreateChatCorrelator', async (event, video) => {
+  const client = CloudClient.getInstance();
+  return client.getOrCreateChatCorrelator(video);
 });
 
-/**
- * Get the list of video files and their state.
- */
-ipcMain.handle('getVideoState', async () => {
-  const storagePath = cfg.get<string>('storagePath');
-  assert(manager);
-  return manager.loadAllVideos(storagePath);
+ipcMain.handle('getChatMessages', async (event, correlator) => {
+  const client = CloudClient.getInstance();
+  return client.getChatMessages(correlator);
+});
+
+ipcMain.on('postChatMessage', (event, correlator, message) => {
+  const client = CloudClient.getInstance();
+  client.postChatMessage(correlator, message);
+});
+
+ipcMain.on('deleteChatMessage', (event, id) => {
+  const client = CloudClient.getInstance();
+  client.deleteChatMessage(id);
 });
 
 /**
@@ -386,6 +466,23 @@ app.on('window-all-closed', async () => {
 });
 
 /**
+ * Before quit events, also called invoked the automatic quit on upgrade.
+ */
+app.on('before-quit', () => {
+  console.info('[Main] Running before-quit actions');
+
+  if (tray) {
+    console.info('[Main] Destroy tray icon');
+    tray.destroy();
+    tray = null;
+  }
+
+  Poller.getInstance().stop();
+  uIOhook.stop();
+  Recorder.getInstance().shutdownOBS();
+});
+
+/**
  * App start-up.
  */
 app
@@ -395,28 +492,43 @@ app
     const singleInstanceLock = app.requestSingleInstanceLock();
 
     if (!singleInstanceLock) {
-      console.warn(
-        '[Main] Blocked attempt to launch a second instance of the application',
-      );
-
+      console.warn('[Main] Blocked attempt to launch a second instance');
       app.quit();
       return;
     }
 
     app.on('second-instance', () => {
-      console.info('[Main] Second instance attempted');
-
-      // Someone tried to run a second instance, we should focus this app.
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
-        }
-
-        mainWindow.show();
-        mainWindow.focus();
-      }
+      console.info('[Main] Second instance attempted, will restore app');
+      if (!window) return;
+      if (window.isMinimized()) window.restore();
+      window.show();
+      window.focus();
     });
+
+    new MenuBuilder().buildMenu();
+
+    // Required by the video player to safely play files from disk.
+    protocol.handle('vod', handleSafeVodRequest);
 
     createWindow();
   })
   .catch(console.error);
+
+const send = (channel: string, ...args: unknown[]) => {
+  if (!window || window.isDestroyed()) return; // Can happen on shutdown.
+  window.webContents.send(channel, ...args);
+};
+
+const playSoundAlert = (alert: SoundAlerts) => {
+  if (!window || window.isDestroyed()) return; // Can happen on shutdown.
+  console.info('[Main] Playing sound alert', alert);
+  send('playAudio', alert);
+};
+
+const getNativeWindowHandle = () => {
+  assert(window);
+  assert(!window.isDestroyed()); // Can't tolerate this here. But this shouldn't be possible.
+  return window.getNativeWindowHandle();
+};
+
+export { send, getNativeWindowHandle, playSoundAlert };

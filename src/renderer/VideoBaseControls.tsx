@@ -1,10 +1,17 @@
-import { FC, useEffect, useRef, useState } from 'react';
+import {
+  Dispatch,
+  FC,
+  SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { AppState, Encoder, RecStatus } from 'main/types';
 import { obsResolutions } from 'main/constants';
 import { configSchema } from 'config/configSchema';
 import { ESupportedEncoders, QualityPresets } from 'main/obsEnums';
-import { Info } from 'lucide-react';
-import { getLocalePhrase, Phrase } from 'localisation/translations';
+import { Info, Wand } from 'lucide-react';
+import { getLocalePhrase } from 'localisation/translations';
 import { useSettings, setConfigValues } from './useSettings';
 import {
   encoderFilter,
@@ -26,6 +33,8 @@ import {
   SelectValue,
 } from './components/Select/Select';
 import TextBanner from './components/TextBanner/TextBanner';
+import { Phrase } from 'localisation/phrases';
+import { Button } from './components/Button/Button';
 
 const ipc = window.electron.ipcRenderer;
 
@@ -35,6 +44,7 @@ const fpsOptions = [10, 20, 30, 60];
 interface IProps {
   recorderStatus: RecStatus;
   appState: AppState;
+  setPreviewEnabled: Dispatch<SetStateAction<boolean>>;
 }
 
 /**
@@ -49,7 +59,7 @@ interface IProps {
  */
 const VideoBaseControls: FC<IProps> = (props: IProps) => {
   const [config, setConfig] = useSettings();
-  const { recorderStatus, appState } = props;
+  const { recorderStatus, appState, setPreviewEnabled } = props;
   const initialRender = useRef(true);
   const highRes = isHighRes(config.obsOutputResolution);
   const [encoders, setEncoders] = useState<Encoder[]>([]);
@@ -82,7 +92,7 @@ const VideoBaseControls: FC<IProps> = (props: IProps) => {
       obsRecEncoder: config.obsRecEncoder,
     });
 
-    ipc.sendMessage('settingsChange', []);
+    ipc.reconfigureBase();
   }, [
     config.obsOutputResolution,
     config.obsFPS,
@@ -140,10 +150,11 @@ const VideoBaseControls: FC<IProps> = (props: IProps) => {
         <Select
           value={config.obsOutputResolution}
           onValueChange={setCanvasResolution}
+          onOpenChange={(open) => setPreviewEnabled(!open)}
           disabled={isComponentDisabled()}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select a resolution" />
+            <SelectValue placeholder={getLocalePhrase(appState.language, Phrase.SelectResolution)} />
           </SelectTrigger>
           <SelectContent side="right" position="popper">
             {outputResolutions.map((resolution) => (
@@ -235,11 +246,6 @@ const VideoBaseControls: FC<IProps> = (props: IProps) => {
       return <></>;
     }
 
-    const cloudFilter = (quality: QualityPresets) => {
-      if (config.cloudUpload) return quality !== QualityPresets.ULTRA;
-      return true;
-    };
-
     const translateQuality = (p: QualityPresets) => {
       switch (p) {
         case QualityPresets.ULTRA:
@@ -255,7 +261,7 @@ const VideoBaseControls: FC<IProps> = (props: IProps) => {
       }
     };
 
-    const options = Object.values(QualityPresets).filter(cloudFilter);
+    const options = Object.values(QualityPresets);
 
     return (
       <div className="flex flex-col w-1/4 min-w-40 max-w-60">
@@ -274,10 +280,11 @@ const VideoBaseControls: FC<IProps> = (props: IProps) => {
         <Select
           value={config.obsQuality}
           onValueChange={setQuality}
+          onOpenChange={(open) => setPreviewEnabled(!open)}
           disabled={isComponentDisabled()}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select quality" />
+            <SelectValue placeholder={getLocalePhrase(appState.language, Phrase.SelectQuality)} />
           </SelectTrigger>
           <SelectContent>
             {options.map((option) => (
@@ -296,6 +303,16 @@ const VideoBaseControls: FC<IProps> = (props: IProps) => {
       return {
         ...prevState,
         obsRecEncoder: value,
+      };
+    });
+  };
+
+  const autoSelectEncoder = async () => {
+    const encoder = await ipc.getSensibleEncoderDefault();
+    setConfig((prevState) => {
+      return {
+        ...prevState,
+        obsRecEncoder: encoder,
       };
     });
   };
@@ -319,22 +336,36 @@ const VideoBaseControls: FC<IProps> = (props: IProps) => {
             <Info size={20} className="inline-flex ml-2" />
           </Tooltip>
         </Label>
-        <Select
-          value={config.obsRecEncoder}
-          onValueChange={setEncoder}
-          disabled={isComponentDisabled()}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select encoder" />
-          </SelectTrigger>
-          <SelectContent>
-            {encoders.map((encoder) => (
-              <SelectItem key={encoder.name} value={encoder.name}>
-                {mapEncoderToString(encoder, appState.language)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-row gap-x-2">
+          <Select
+            value={config.obsRecEncoder}
+            onValueChange={setEncoder}
+            onOpenChange={(open) => setPreviewEnabled(!open)}
+            disabled={isComponentDisabled()}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={getLocalePhrase(appState.language, Phrase.SelectEncoder)} />
+            </SelectTrigger>
+            <SelectContent>
+              {encoders.map((encoder) => (
+                <SelectItem key={encoder.name} value={encoder.value}>
+                  {mapEncoderToString(encoder, appState.language)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Tooltip
+            content={getLocalePhrase(
+              appState.language,
+              Phrase.AutoSelectEncoderTooltip,
+            )}
+            side="right"
+          >
+            <Button variant="ghost" onClick={autoSelectEncoder}>
+              <Wand />
+            </Button>
+          </Tooltip>
+        </div>
       </div>
     );
   };

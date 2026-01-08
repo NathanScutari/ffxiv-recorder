@@ -7,7 +7,171 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Changed
 ### Added
+- [Issue 769](https://github.com/aza547/wow-recorder/issues/769) - Users with delete permissions can now delete chat messages.
+- [Issue 783](https://github.com/aza547/wow-recorder/issues/783) - Search for common WoW locations on initial install to auto-configure log paths.
+- [Issue 783](https://github.com/aza547/wow-recorder/issues/783) - Default storage folder to a sensible location on first time installation.
+
 ### Fixed
+- [Issue 733](https://github.com/aza547/wow-recorder/issues/733) - Fix row highlighting when sorted.
+- [Issue 731](https://github.com/aza547/wow-recorder/issues/731) - Fix an issue where quickly switching between content types could fail to record.
+- [Issue 782](https://github.com/aza547/wow-recorder/issues/782) - Make video buttons more friendly in the presence of cloud/disk storage. 
+
+## [7.3.0] - 2025-12-07
+### Added
+- [Issue 777](https://github.com/aza547/wow-recorder/issues/777) - Adds Midnight M+, raids and new arena.
+- [Issue 769](https://github.com/aza547/wow-recorder/issues/769) - Enables chat for Clips and fixes for Manual categories.
+
+## [7.2.1] - 2025-11-29
+### Changed
+- [Issue 771](https://github.com/aza547/wow-recorder/issues/771) - Record in MKV as an intermediate format for better error handle characteristics.
+- [Issue 775](https://github.com/aza547/wow-recorder/issues/755) - Selected player is now sticky when changing between rows.
+
+### Added
+- [PR 768](https://github.com/aza547/wow-recorder/pull/768) - Added config for setting classic PTR. 
+- [Issue 776](https://github.com/aza547/wow-recorder/issues/776) - Patreon icon in bottom left.
+
+### Fixed
+- Improve frontend render performance on upload/download progress re-renders.
+- Fix an issue where the temporary recording folder would only get cleared out on restarts of the app.
+- [Issue 775](https://github.com/aza547/wow-recorder/issues/775) - Fixes a bug where phyiscally changing from an Nvidia to an AMD GPU or vice versa could cause the app to crash.
+
+## [7.2.0] - 2025-11-12
+### Changed
+- Moved the viewpoints selection into an expandable drawer.
+
+### Added
+- [PR 764](https://github.com/aza547/wow-recorder/pull/764) - Adds the video chat feature for Pro users.
+- Classic PTR "support". The app will accept Classic PTR paths.  As usual, PTR support is best effort.
+
+### Fixed
+- Take the latest rust-ps executable.
+- Make the debounce timer on inputting cloud login details longer so it's less annoying.
+- Fix the style of the scrollbar on the filter selection dropdown.
+- [Issue 765](https://github.com/aza547/wow-recorder/issues/765) - Allow number settings fields to be temporarily empty while changing them.
+
+## [7.1.1] - 2025-10-31
+### Fixed
+- [Issue 760](https://github.com/aza547/wow-recorder/issues/760) - Guard against invalid monitor indexes.
+- Add the `-movflags +faststart` ffmpeg flags to the final video cut to improve Cloud load speeds.
+- Fix some Korean translations that were accidentally in Chinese.
+- [Issue 759](https://github.com/aza547/wow-recorder/issues/759) - Fix issue where sleeping windows could trigger a "failed to force stop" error.
+
+## [7.1.0] - 2025-10-26
+### Added
+- [Issue 719](https://github.com/aza547/wow-recorder/issues/719) - Add the ability to bulk upload/download videos.
+
+### Fixed
+- [Issue 748](https://github.com/aza547/wow-recorder/issues/748) - Fix an issue where the auto-installer would fail to close the application.
+- [Issue 728](https://github.com/aza547/wow-recorder/issues/728) - Fix an issue where WCR could fail to load videos from disk if many thousands of videos are present.
+- Fix an issue where WCR wouldn't launch for some users with modified PATH environment variables.
+- Better adhere to Electron security best practices, videos are now served from disk in a more secure manner via a custom protocol.
+
+## [7.0.3] - 2025-10-11
+### Fixed
+- Fixes some translations and phrases in the audio settings.
+- [Issue 746](https://github.com/aza547/wow-recorder/issues/746) - Rewords the "Reset Game" button to "Auto-Fit Game". 
+- [Issue 745](https://github.com/aza547/wow-recorder/issues/745) - Fix PTT/Manual hotkeys being overly permissive.
+- [Issue 747](https://github.com/aza547/wow-recorder/issues/747) - Better client logout handling on disabled/deleted guild.
+
+## [7.0.2] - 2025-10-01
+### Added
+- Log electron GPU info on startup.
+- Log error messages from OBS signals if available.
+
+### Fixed
+- [Issue 740](https://github.com/aza547/wow-recorder/issues/740) - Fix an issue where HDR displays would show a black screen on both the preview and recording.
+- [Issue 743](https://github.com/aza547/wow-recorder/issues/743) - Fix a bug where the encoder could auto-default to an invalid selection if recording resolutions higher than 4000.
+- [Issue 744](https://github.com/aza547/wow-recorder/issues/744) - Fix a bug where the game source would not move if the overlay source was snapped.
+- Fix a bug where a previous clip could be re-used if OBS hit a recording error.
+
+## [7.0.1] - 2025-09-27
+
+### Fixed
+- Fix a bug where opening the audio settings page could crash the app.
+
+## [7.0.0] - 2025-09-27
+### Changed
+- [Issue 697](https://github.com/aza547/wow-recorder/issues/697) & [PR 702](https://github.com/aza547/wow-recorder/pull/702) - Remove the dependency on OSN, OBS bindings are now provided by [noobs](https://github.com/aza547/noobs).
+- Buffer recordings are now entirely in memory, removing a timing window that could cause videos to be wrongly cut also reducing disk wear and hopefully user confusion.
+- Rework the audio sources page to be easier to understand.
+- The `jim_nvenc` and `jim_nvenc_av1` encoders have been replaced by their modern counterparts. Migration is automatic.
+- Pro config is now separated from the base config and won't interrupt recording if it goes wrong (e.g. your guild is deleted).
+
+### Added
+- Add the ability to manually record via a hotkey configurable in the settings.
+- Add the ability to drag and scale video sources on the scene, as well as various other options.
+- Split out cloud config from regular config and add an appropriate status card. Cloud settings can be reconfigured while recording.
+- Add the ability to force the video sources to SDR.
+- Volume can now be configured on a per-source basis.
+- [Issue 632](https://github.com/aza547/wow-recorder/issues/632) - Add AV1 support for AMD: there has been no testing of this, please share your experience in Discord!
+- Add support for QSV (H264 and AV1) encoding.
+- Add a button to refresh the list of guilds on demand.
+- On first time setup, automatically set the default the encoder to a sensible default (i.e. pick a hardware encoder).
+- Add a button to set the encoder to a sensible default (same as above, but on demand rather than on first time install).
+
+### Fixed
+- [Issue 677](https://github.com/aza547/wow-recorder/issues/677) - Resolve issues with select menus hidden behind scene preview.
+- [Issue 640](https://github.com/aza547/wow-recorder/issues/640) - Remove a hack relying on moving the preview off-screen when not on display.
+- Fix HOA timer.
+- Hide the scene preview while select menus are open, so they do not overlap.
+- Automatically handle the changing of an audio device ID, if the device is available with a different ID.
+- OBS logs now live in the same folder as the WCR logs so should be more obvious.
+- OBS logs now have correct timestamps, rather than starting at 00:00:00.
+- 
+## [6.15.6] - 2025-08-28
+### Fixed
+- [Issue 725](https://github.com/aza547/wow-recorder/issues/725) - Remove the faders. This is to address crashes reported by several users. This function will come back using the libobs volume setting in 7.0.0 but setting source volume is for now unsupported. Stability is priority.
+
+## [6.15.5] - 2025-08-25
+### Fixed
+- Fix Streets of Tazavesh timer again.
+- [Issue 720](https://github.com/aza547/wow-recorder/issues/720) - Fix record challenge mode toggle.
+- [Issue 716](https://github.com/aza547/wow-recorder/issues/716) - Don't allow "#" in storage path.
+- [Issue 703](https://github.com/aza547/wow-recorder/issues/703) - Allow "`" as the PTT key.
+- [Issue 639](https://github.com/aza547/wow-recorder/issues/639) - Fix key handling when drawing mode is enabled.
+
+## [6.15.4] - 2025-08-16
+### Fixed
+- [Issue 717](https://github.com/aza547/wow-recorder/issues/717) - Update to OSN `0.25.47` to fix game capture mode.
+- Fixed some key timers.
+- Fixed a fader release log.
+
+## [6.15.3] - 2025-08-10
+### Added
+- [PR 713](https://github.com/aza547/wow-recorder/pull/713) - Add switch to Enable/Disable recording of MoP Classic challenge modes. 
+
+### Fixed
+- [Issue 708](https://github.com/aza547/wow-recorder/issues/708) - Fix an issue where force stopping classic arena would give the wrong result and category.
+- Update timers for TWW season 3 Mythic+.
+
+## [6.15.1] - 2025-08-01
+### Fixed
+- Add some missing MOP classic arenas.
+
+## [6.15.0] - 2025-07-31
+### Changed
+- Track the region as part of the combatant now the combat log includes it.
+
+### Added
+- [PR 692](https://github.com/aza547/wow-recorder/pull/692/files) - Adds Configurable Push-To-Talk Release Delay.
+- Add MOP challenge modes.
+
+### Fixed
+- Make wipes overrun a few seconds longerto avoid missing anything.
+- [Issue 668](https://github.com/aza547/wow-recorder/issues/668) - Fixes the zoom in hotkey.
+- Make the test raid button work even when "record current raid only" is selected.
+- Fix an issue where rescaling would not trigger on changing the canvas size.
+
+## [6.14.2] - 2025-06-29
+### Changed
+- Don't apply current retail encounter filtering to PTR.
+- Update OSN to 0.25.34.
+
+### Added
+- [Issue 689](https://github.com/aza547/wow-recorder/issues/689) - Add TWW Season 3 new dungeon.
+
+### Fixed
+- Fix a bug where the video source wouldn't rescale correctly after a reconfigure sometimes.
 
 ## [6.14.1] - 2025-06-15
 ### Changed

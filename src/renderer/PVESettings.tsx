@@ -1,7 +1,7 @@
 import { configSchema, ConfigurationSchema } from 'config/configSchema';
 import React from 'react';
 import { Info } from 'lucide-react';
-import { getLocalePhrase, Phrase } from 'localisation/translations';
+import { getLocalePhrase } from 'localisation/translations';
 import { AppState } from 'main/types';
 import { setConfigValues, useSettings } from './useSettings';
 import Switch from './components/Switch/Switch';
@@ -15,6 +15,7 @@ import {
   SelectItem,
   SelectValue,
 } from './components/Select/Select';
+import { Phrase } from 'localisation/phrases';
 
 const raidDifficultyOptions = [
   { name: 'LFR', phrase: Phrase.LFR },
@@ -41,16 +42,36 @@ const PVESettings = (props: IProps) => {
       return;
     }
 
-    setConfigValues({
+    const toSet: Record<string, boolean | string | number> = {
       recordRaids: config.recordRaids,
       minEncounterDuration: config.minEncounterDuration,
       minRaidDifficulty: config.minRaidDifficulty,
       recordDungeons: config.recordDungeons,
-      minKeystoneLevel: config.minKeystoneLevel,
+      recordChallengeModes: config.recordChallengeModes,
       raidOverrun: config.raidOverrun,
       dungeonOverrun: config.dungeonOverrun,
       recordCurrentRaidEncountersOnly: config.recordCurrentRaidEncountersOnly,
-    });
+    };
+
+    // Only set these if they are valid values. We allow -1 set in the
+    // frontend to represent temporarily unset values in the Input fields.
+    if (config.minEncounterDuration >= 0) {
+      toSet.minEncounterDuration = config.minEncounterDuration;
+    }
+
+    if (config.raidOverrun >= 0) {
+      toSet.raidOverrun = config.raidOverrun;
+    }
+
+    if (config.minKeystoneLevel >= 0) {
+      toSet.minKeystoneLevel = config.minKeystoneLevel;
+    }
+
+    if (config.dungeonOverrun >= 0) {
+      toSet.dungeonOverrun = config.dungeonOverrun;
+    }
+
+    setConfigValues(toSet);
   }, [
     config.dungeonOverrun,
     config.minEncounterDuration,
@@ -58,6 +79,7 @@ const PVESettings = (props: IProps) => {
     config.minRaidDifficulty,
     config.raidOverrun,
     config.recordDungeons,
+    config.recordChallengeModes,
     config.recordRaids,
     config.recordCurrentRaidEncountersOnly,
   ]);
@@ -151,6 +173,12 @@ const PVESettings = (props: IProps) => {
   const setMinEncounterDuration = (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
+    if (!event.target.value) {
+      // Allow setting empty as midpoint.
+      setConfig((prev) => ({ ...prev, minEncounterDuration: -1 }));
+      return;
+    }
+
     const minEncounterDuration = parseInt(event.target.value, 10);
 
     if (Number.isNaN(minEncounterDuration)) {
@@ -188,7 +216,9 @@ const PVESettings = (props: IProps) => {
           </Tooltip>
         </Label>
         <Input
-          value={config.minEncounterDuration}
+          value={
+            config.minEncounterDuration >= 0 ? config.minEncounterDuration : ''
+          }
           name="minEncounterDuration"
           disabled={!config.recordRaids}
           onChange={setMinEncounterDuration}
@@ -199,6 +229,12 @@ const PVESettings = (props: IProps) => {
   };
 
   const setRaidOverrun = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.value) {
+      // Allow setting empty as midpoint.
+      setConfig((prev) => ({ ...prev, raidOverrun: -1 }));
+      return;
+    }
+
     const raidOverrun = parseInt(event.target.value, 10);
 
     if (Number.isNaN(raidOverrun) || raidOverrun < 0 || raidOverrun > 60) {
@@ -234,7 +270,7 @@ const PVESettings = (props: IProps) => {
           </Tooltip>
         </Label>
         <Input
-          value={config.raidOverrun}
+          value={config.raidOverrun >= 0 ? config.raidOverrun : ''}
           name="raidOverrun"
           disabled={!config.recordRaids}
           onChange={setRaidOverrun}
@@ -245,6 +281,12 @@ const PVESettings = (props: IProps) => {
   };
 
   const setDungeonOverrun = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.value) {
+      // Allow setting empty as midpoint.
+      setConfig((prev) => ({ ...prev, dungeonOverrun: -1 }));
+      return;
+    }
+
     const dungeonOverrun = parseInt(event.target.value, 10);
 
     if (
@@ -284,7 +326,7 @@ const PVESettings = (props: IProps) => {
           </Tooltip>
         </Label>
         <Input
-          value={config.dungeonOverrun}
+          value={config.dungeonOverrun >= 0 ? config.dungeonOverrun : ''}
           name="dungeonOverrun"
           disabled={!config.recordDungeons}
           onChange={setDungeonOverrun}
@@ -299,6 +341,15 @@ const PVESettings = (props: IProps) => {
       return {
         ...prevState,
         recordDungeons: checked,
+      };
+    });
+  };
+
+  const setRecordChallengeModes = (checked: boolean) => {
+    setConfig((prevState) => {
+      return {
+        ...prevState,
+        recordChallengeModes: checked,
       };
     });
   };
@@ -326,6 +377,12 @@ const PVESettings = (props: IProps) => {
   };
 
   const setMinKeystoneLevel = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.value) {
+      // Allow setting empty as midpoint.
+      setConfig((prev) => ({ ...prev, minKeystoneLevel: -1 }));
+      return;
+    }
+
     const minKeystoneLevel = parseInt(event.target.value, 10);
 
     if (Number.isNaN(minKeystoneLevel)) {
@@ -360,7 +417,7 @@ const PVESettings = (props: IProps) => {
           </Tooltip>
         </Label>
         <Input
-          value={config.minKeystoneLevel}
+          value={config.minKeystoneLevel >= 0 ? config.minKeystoneLevel : ''}
           name="minKeystoneLevel"
           disabled={!config.recordDungeons}
           onChange={setMinKeystoneLevel}

@@ -1,7 +1,12 @@
 import { URL } from 'url';
 import path from 'path';
-import fs, { promises as fspromise } from 'fs';
-import { app, BrowserWindow, Display, screen } from 'electron';
+import fs, {
+  createReadStream,
+  existsSync,
+  promises as fspromise,
+  Stats,
+} from 'fs';
+import { app, Display, screen } from 'electron';
 import {
   EventType,
   uIOhook,
@@ -17,16 +22,23 @@ import {
   OurDisplayType,
   RendererVideo,
   ObsAudioConfig,
-  CrashData,
+  ErrorReport,
   CloudSignedMetadata,
 } from './types';
 import { VideoCategory } from '../types/VideoCategory';
+import ConfigService from 'config/ConfigService';
+import { AxiosError } from 'axios';
+import { send } from './main';
+import { Readable } from 'stream';
+import { ESupportedEncoders } from './obsEnums';
+import Recorder from './Recorder';
+import { wowInstallSearchPaths } from './constants';
 
 /**
  * When packaged, we need to fix some paths
  */
-const fixPathWhenPackaged = (pathSpec: string) => {
-  return pathSpec.replace('app.asar', 'app.asar.unpacked');
+const fixPathWhenPackaged = (p: string) => {
+  return p.replace('app.asar', 'app.asar.unpacked');
 };
 
 /**
@@ -273,40 +285,6 @@ const loadVideoDetailsDisk = async (
   }
 };
 
-const loadAllVideosDisk = async (
-  storageDir: string,
-): Promise<RendererVideo[]> => {
-  if (!storageDir) {
-    return [];
-  }
-
-  const videos = await getSortedVideos(storageDir);
-
-  if (videos.length === 0) {
-    return [];
-  }
-
-  const videoDetailPromises = videos.map((video) =>
-    loadVideoDetailsDisk(video),
-  );
-
-  // Await all the videoDetailsPromises to settle, and then remove any
-  // that were rejected. This can happen if there is a missing metadata file.
-  const videoDetails: RendererVideo[] = (
-    await Promise.all(videoDetailPromises.map((p) => p.catch((e) => e)))
-  ).filter((result) => !(result instanceof Error));
-
-  // Any details marked for deletion do it now. We allow for this flag to be
-  // set in the metadata to give us a robust mechanism for removing a video
-  // that may be open in the player. We hide it from the state as part of a
-  // refresh, that guarentees it cannot be loaded in the player.
-  videoDetails.filter((video) => video.delete).forEach(delayedDeleteVideo);
-
-  // Return this list of videos without those marked for deletion which may still
-  // exist for a short time.
-  return videoDetails.filter((video) => !video.delete);
-};
-
 /**
  * Writes video metadata asynchronously and returns a Promise
  */
@@ -328,62 +306,6 @@ const openSystemExplorer = (filePath: string) => {
   const windowsPath = filePath.replace(/\//g, '\\');
   const cmd = `explorer.exe /select,"${windowsPath}"`;
   exec(cmd, () => {});
-};
-
-/**
- * Put a save marker on a video, protecting it from the file monitor.
- */
-const protectVideoDisk = async (protect: boolean, videoPath: string) => {
-  let metadata;
-
-  try {
-    metadata = await getMetadataForVideo(videoPath);
-  } catch (err) {
-    console.error(
-      `[Util] Metadata not found for '${videoPath}', but somehow we managed to load it. This shouldn't happen.`,
-      err,
-    );
-
-    return;
-  }
-
-  if (protect) {
-    console.info(`[Util] User set protected ${videoPath}`);
-  } else {
-    console.info(`[Util] User unprotected ${videoPath}`);
-  }
-
-  metadata.protected = protect;
-  await writeMetadataFile(videoPath, metadata);
-};
-
-/**
- * Tag a video.
- */
-const tagVideoDisk = async (videoPath: string, tag: string) => {
-  let metadata;
-
-  try {
-    metadata = await getMetadataForVideo(videoPath);
-  } catch (err) {
-    console.error(
-      `[Util] Metadata not found for '${videoPath}', but somehow we managed to load it. This shouldn't happen.`,
-      err,
-    );
-
-    return;
-  }
-
-  if (!tag || !/\S/.test(tag)) {
-    // empty or whitespace only
-    console.info('[Util] User removed tag');
-    metadata.tag = undefined;
-  } else {
-    console.info('[Util] User tagged', videoPath, 'with', tag);
-    metadata.tag = tag;
-  }
-
-  await writeMetadataFile(videoPath, metadata);
 };
 
 /**
@@ -491,12 +413,17 @@ const getWowFlavour = (pathSpec: string): string => {
 };
 
 /**
- * Updates the status icon for the application.
- * @param status the status number
+ * Adds an error to the error report component.
  */
-const addCrashToUI = (mainWindow: BrowserWindow, crashData: CrashData) => {
-  console.info('[Util] Updating crashes with:', crashData);
-  mainWindow.webContents.send('updateCrashes', crashData);
+const emitErrorReport = (data: unknown) => {
+  console.error('[Util] Emitting error report', String(data));
+
+  const report: ErrorReport = {
+    date: new Date(),
+    reason: String(data),
+  };
+
+  send('updateErrorReport', report);
 };
 
 const isPushToTalkHotkey = (
@@ -517,18 +444,50 @@ const isPushToTalkHotkey = (
     return buttonMatch;
   }
 
-  let modifierMatch = true;
+  // Deliberately permissive here, we check all the modifiers we have in
+  // config are met but we don't enforce the inverse, i.e. we'll accept
+  // an additional modifier present (so CTRL + SHIFT + E will trigger
+  // a CTRL + E hotkey).
+  const modifierMatch = pushToTalkModifiers.split(',').reduce((acc, mod) => {
+    if (mod === 'alt') return acc && altKey;
+    if (mod === 'ctrl') return acc && ctrlKey;
+    if (mod === 'shift') return acc && shiftKey;
+    if (mod === 'win') return acc && metaKey;
+    return acc; // Ignore unknown modifiers
+  }, true);
+
+  return buttonMatch && modifierMatch;
+};
+
+const isManualRecordHotKey = (event: UiohookKeyboardEvent) => {
+  const { keycode, altKey, ctrlKey, shiftKey, metaKey, type } = event;
+  const cfg = ConfigService.getInstance();
+
+  if (type !== EventType.EVENT_KEY_PRESSED) {
+    // We should never hit this but just being safe.
+    return false;
+  }
+
+  const manualRecordHotKey = cfg.get<number>('manualRecordHotKey');
+  const manualRecordHotKeyModifiers = cfg.get<string>(
+    'manualRecordHotKeyModifiers',
+  );
+
+  const buttonMatch = keycode > 0 && keycode === manualRecordHotKey;
 
   // Deliberately permissive here, we check all the modifiers we have in
   // config are met but we don't enforce the inverse, i.e. we'll accept
   // an additional modifier present (so CTRL + SHIFT + E will trigger
   // a CTRL + E hotkey).
-  pushToTalkModifiers.split(',').forEach((mod) => {
-    if (mod === 'alt') modifierMatch = altKey;
-    if (mod === 'ctrl') modifierMatch = ctrlKey;
-    if (mod === 'shift') modifierMatch = shiftKey;
-    if (mod === 'win') modifierMatch = metaKey;
-  });
+  const modifierMatch = manualRecordHotKeyModifiers
+    .split(',')
+    .reduce((acc, mod) => {
+      if (mod === 'alt') return acc && altKey;
+      if (mod === 'ctrl') return acc && ctrlKey;
+      if (mod === 'shift') return acc && shiftKey;
+      if (mod === 'win') return acc && metaKey;
+      return acc; // Ignore unknown modifiers
+    }, true);
 
   return buttonMatch && modifierMatch;
 };
@@ -890,6 +849,7 @@ const takeOwnershipBufferDir = async (dir: string) => {
 
   const unexpected = files
     .filter((file) => !file.endsWith('.mp4'))
+    .filter((file) => !file.endsWith('.mkv'))
     .filter((file) => file !== 'managed.txt');
 
   if (unexpected.length > 0) {
@@ -904,10 +864,10 @@ const takeOwnershipBufferDir = async (dir: string) => {
     throw new Error(`Can not take ownership of ${dir}. ${helptext}`);
   }
 
-  const regex = /^\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}.mp4$/;
+  const regex = /^\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}.(mp4|mkv)$/;
 
   files
-    .filter((file) => file.endsWith('.mp4'))
+    .filter((file) => file.endsWith('.mp4') || file.endsWith('.mkv'))
     .forEach((file) => {
       const match = regex.test(file);
 
@@ -921,13 +881,182 @@ const takeOwnershipBufferDir = async (dir: string) => {
   await fs.promises.writeFile(file, content);
 };
 
+/**
+ * Convience method to log an axios error.
+ */
+const logAxiosError = (msg: string, error: AxiosError) => {
+  console.error(msg, {
+    message: error.message,
+    status: error.status,
+    code: error.code,
+    cause: error.cause,
+    url: error.config?.url,
+    rspStatus: error.response?.status,
+    rspData: error.response?.data,
+  });
+};
+
+/**
+ * Custom protocol that enables the frontend to request MP4 files from disk.
+ */
+const handleSafeVodRequest = async (request: Request) => {
+  try {
+    const sliced = request.url.toString().slice('vod://wcr/'.length);
+    const requestUrl = decodeURIComponent(sliced);
+
+    if (!requestUrl) {
+      console.error('[Util] Bad URL:', requestUrl);
+
+      return new Response('', {
+        status: 400,
+        statusText: 'Bad URL',
+      });
+    }
+
+    const filePath = Buffer.from(requestUrl).toString('utf-8').split('#')[0]; // Remove any timestamps, the frontend handles those.
+
+    if (!filePath.endsWith('.mp4')) {
+      console.error('[Util] Not an MP4 file:', filePath);
+
+      return new Response('', {
+        status: 400,
+        statusText: 'Must be MP4',
+      });
+    }
+
+    let stats: Stats;
+
+    try {
+      // This will throw if the file doesn't exist.
+      stats = await fspromise.stat(filePath);
+    } catch (err) {
+      console.error('[Util] Error stating file:', err, filePath);
+
+      return new Response('', {
+        status: 404,
+        statusText: 'File Not Found',
+      });
+    }
+
+    const fileSize = stats.size;
+    const rangeHeader = request.headers.get('Range');
+
+    if (rangeHeader) {
+      const rangeParts = rangeHeader.replace(/bytes=/, '').split('-');
+      const start = parseInt(rangeParts[0], 10);
+      const end = rangeParts[1] ? parseInt(rangeParts[1], 10) : fileSize - 1;
+
+      const chunkSize = end - start + 1;
+      const stream = createReadStream(filePath, { start, end });
+      const body = Readable.toWeb(stream);
+
+      return new Response(body as ReadableStream<Uint8Array>, {
+        status: 206,
+        statusText: 'Partial Content',
+        headers: {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize.toString(),
+          'Content-Type': 'video/mp4',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    } else {
+      const stream = createReadStream(filePath);
+      const body = Readable.toWeb(stream);
+
+      return new Response(body as ReadableStream<Uint8Array>, {
+        status: 200,
+        headers: {
+          'Content-Length': fileSize.toString(),
+          'Accept-Ranges': 'bytes',
+          'Content-Type': 'video/mp4',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[Util] Protocol handler error:', error);
+
+    return new Response('Internal Server Error', {
+      status: 500,
+      statusText: 'Internal Server Error',
+    });
+  }
+};
+
+const runFirstTimeSetupActionsObs = () => {
+  const cfg = ConfigService.getInstance();
+
+  const defaultEncoder =
+    cfg.get<string>('obsRecEncoder') === ESupportedEncoders.OBS_X264;
+
+  if (defaultEncoder) {
+    // If this is first time setup, auto-pick an encoder for the user. Only do it
+    // if the current value is the software encoder, as this is new in 7.0.0, all
+    // users would be subject to it. This way, only the few people who really do
+    // prefer the software encoder will be inconvenienced.
+    console.info('[Util] Picking sensible OBS recorder encoder');
+    const encoder = Recorder.getInstance().getSensibleEncoderDefault();
+    cfg.set('obsRecEncoder', encoder);
+  }
+};
+
+const runFirstTimeSetupActionsNoObs = () => {
+  const cfg = ConfigService.getInstance();
+
+  const isRetailConfigured =
+    cfg.get<boolean>('recordRetail') && cfg.get<string>('retailLogPath');
+
+  if (!isRetailConfigured) {
+    console.info('[Util] Attempt to first time configure retail installation');
+
+    for (let i = 0; i < wowInstallSearchPaths.length; i++) {
+      const installPath = wowInstallSearchPaths[i] + '\\_retail_\\Logs';
+      const installExists = existsSync(installPath);
+
+      if (installExists) {
+        console.info('[Util] Found retail WoW installation at', installPath);
+        cfg.set('retailLogPath', installPath);
+        cfg.set('recordRetail', true);
+        break;
+      }
+    }
+  }
+
+  const isClassicConfigured =
+    cfg.get<boolean>('recordClassic') && cfg.get<string>('classicLogPath');
+
+  if (!isClassicConfigured) {
+    console.info('[Util] Attempt to first time configure classic installation');
+
+    for (let i = 0; i < wowInstallSearchPaths.length; i++) {
+      const installPath = wowInstallSearchPaths[i] + '\\_classic_\\Logs';
+      const installExists = existsSync(installPath);
+
+      if (installExists) {
+        console.info('[Util] Found classic WoW installation at', installPath);
+        cfg.set('classicLogPath', installPath);
+        cfg.set('recordClassic', true);
+        break;
+      }
+    }
+  }
+
+  if (!cfg.get<string>('storagePath')) {
+    console.info('[Util] Setting up default storage path');
+    const baseVideoPath = app.getPath('videos');
+    const initialStorageDir = path.join(baseVideoPath, 'Warcraft Recorder');
+    fs.mkdirSync(initialStorageDir, { recursive: true });
+    cfg.set('storagePath', initialStorageDir);
+  }
+};
+
 export {
   setupApplicationLogging,
-  loadAllVideosDisk,
   writeMetadataFile,
   deleteVideoDisk,
   openSystemExplorer,
-  protectVideoDisk,
   fixPathWhenPackaged,
   getSortedVideos,
   getAvailableDisplays,
@@ -942,11 +1071,10 @@ export {
   nextMousePressPromise,
   convertUioHookEvent,
   getPromiseBomb,
-  addCrashToUI,
+  emitErrorReport,
   buildClipMetadata,
   getOBSFormattedDate,
   checkDisk,
-  tagVideoDisk,
   getMetadataFileNameForVideo,
   loadVideoDetailsDisk,
   reverseChronologicalVideoSort,
@@ -959,4 +1087,10 @@ export {
   takeOwnershipStorageDir,
   takeOwnershipBufferDir,
   convertKoreanVideoCategory,
+  isManualRecordHotKey,
+  delayedDeleteVideo,
+  logAxiosError,
+  handleSafeVodRequest,
+  runFirstTimeSetupActionsObs,
+  runFirstTimeSetupActionsNoObs,
 };

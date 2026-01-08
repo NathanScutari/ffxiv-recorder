@@ -63,6 +63,7 @@ const useTable = (
     videoFilterTags,
     dateRangeFilter,
     storageFilter,
+    cloudStatus,
   } = appState;
 
   /**
@@ -97,7 +98,8 @@ const useTable = (
         accessorFn: (v) => v,
         sortingFn: (a, b) => detailSort(a, b),
         header: DetailsHeader,
-        cell: (ctx) => populateDetailsCell(ctx, appState, setVideoState),
+        cell: (ctx) =>
+          populateDetailsCell(ctx, language, cloudStatus, setVideoState),
       },
       {
         id: 'Encounter',
@@ -140,11 +142,11 @@ const useTable = (
         id: 'Viewpoints',
         accessorFn: (v) => v,
         header: () => ViewpointsHeader(language),
-        cell: populateViewpointCell,
+        cell: (v) => populateViewpointCell(v),
         sortingFn: viewPointCountSort,
       },
     ],
-    [appState, videoState, setVideoState],
+    [language, cloudStatus, videoState, setVideoState],
   );
 
   /**
@@ -159,7 +161,8 @@ const useTable = (
         accessorFn: (v) => v,
         sortingFn: (a, b) => detailSort(a, b),
         header: DetailsHeader,
-        cell: (ctx) => populateDetailsCell(ctx, appState, setVideoState),
+        cell: (ctx) =>
+          populateDetailsCell(ctx, language, cloudStatus, setVideoState),
       },
       {
         id: 'Map',
@@ -192,11 +195,11 @@ const useTable = (
         id: 'Viewpoints',
         accessorFn: (v) => v,
         header: () => ViewpointsHeader(language),
-        cell: populateViewpointCell,
+        cell: (v) => populateViewpointCell(v),
         sortingFn: viewPointCountSort,
       },
     ],
-    [appState, setVideoState],
+    [language, cloudStatus, setVideoState],
   );
 
   /**
@@ -211,7 +214,8 @@ const useTable = (
         accessorFn: (v) => v,
         sortingFn: (a, b) => detailSort(a, b),
         header: DetailsHeader,
-        cell: (ctx) => populateDetailsCell(ctx, appState, setVideoState),
+        cell: (ctx) =>
+          populateDetailsCell(ctx, language, cloudStatus, setVideoState),
       },
       {
         id: 'Map',
@@ -258,7 +262,7 @@ const useTable = (
         id: 'Viewpoints',
         accessorFn: (v) => v,
         header: () => ViewpointsHeader(language),
-        cell: populateViewpointCell,
+        cell: (v) => populateViewpointCell(v),
         sortingFn: viewPointCountSort,
       },
     ],
@@ -277,7 +281,8 @@ const useTable = (
         accessorFn: (v) => v,
         sortingFn: (a, b) => detailSort(a, b),
         header: DetailsHeader,
-        cell: (ctx) => populateDetailsCell(ctx, appState, setVideoState),
+        cell: (ctx) =>
+          populateDetailsCell(ctx, language, cloudStatus, setVideoState),
       },
       {
         id: 'Map',
@@ -310,7 +315,7 @@ const useTable = (
         id: 'Viewpoints',
         accessorFn: (v) => v,
         header: () => ViewpointsHeader(language),
-        cell: populateViewpointCell,
+        cell: (v) => populateViewpointCell(v),
         sortingFn: viewPointCountSort,
       },
     ],
@@ -329,7 +334,8 @@ const useTable = (
         accessorFn: (v) => v,
         sortingFn: (a, b) => detailSort(a, b),
         header: DetailsHeader,
-        cell: (ctx) => populateDetailsCell(ctx, appState, setVideoState),
+        cell: (ctx) =>
+          populateDetailsCell(ctx, language, cloudStatus, setVideoState),
       },
       {
         id: 'Type',
@@ -364,8 +370,42 @@ const useTable = (
         id: 'Viewpoints',
         accessorFn: (v) => v,
         header: () => ViewpointsHeader(language),
-        cell: populateViewpointCell,
+        cell: (v) => populateViewpointCell(v),
         sortingFn: viewPointCountSort,
+      },
+    ],
+    [appState, setVideoState],
+  );
+
+  const manualColumns = useMemo<ColumnDef<RendererVideo>[]>(
+    () => [
+      {
+        id: 'Details',
+        size: 80,
+        accessorFn: (v) => v,
+        sortingFn: (a, b) => detailSort(a, b),
+        header: DetailsHeader,
+        cell: (ctx) =>
+          populateDetailsCell(ctx, language, cloudStatus, setVideoState),
+      },
+      {
+        id: 'Type',
+        accessorFn: (v) => v,
+        header: () => TypeHeader(language),
+        cell: 'Manual',
+      },
+      {
+        id: 'Duration',
+        accessorFn: (v) => v,
+        sortingFn: durationSort,
+        header: () => DurationHeader(language),
+        cell: populateDurationCell,
+      },
+      {
+        id: 'Date',
+        accessorFn: (v) => videoToDate(v),
+        header: () => DateHeader(language),
+        cell: populateDateCell,
       },
     ],
     [appState, setVideoState],
@@ -392,6 +432,9 @@ const useTable = (
     case VideoCategory.Skirmish:
     case VideoCategory.SoloShuffle:
       columns = arenaColumns;
+      break;
+    case VideoCategory.Manual:
+      columns = manualColumns;
       break;
     default:
       throw new Error('Unrecognized category');

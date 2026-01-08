@@ -2,7 +2,7 @@ import { ConfigurationSchema, configSchema } from 'config/configSchema';
 import React, { Dispatch, SetStateAction } from 'react';
 import { AppState, RecStatus } from 'main/types';
 import { Info } from 'lucide-react';
-import { getLocalePhrase, Phrase } from 'localisation/translations';
+import { getLocalePhrase } from 'localisation/translations';
 import { setConfigValues } from './useSettings';
 import { pathSelect } from './rendererutils';
 import Switch from './components/Switch/Switch';
@@ -10,6 +10,7 @@ import Label from './components/Label/Label';
 import { Input } from './components/Input/Input';
 import { Tooltip } from './components/Tooltip/Tooltip';
 import TextBanner from './components/TextBanner/TextBanner';
+import { Phrase } from 'localisation/phrases';
 
 interface IProps {
   recorderStatus: RecStatus;
@@ -36,8 +37,11 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
       xivLogPath: config.xivLogPath
     });
 
-    ipc.sendMessage('settingsChange', []);
-  }, [config.recordFFXIV, config.xivLogPath]);
+    ipc.reconfigureBase();
+  }, [
+    config.recordFFXIV, config.xivLogPath
+  ]);
+
 
   const isComponentDisabled = () => {
     const isRecording = recorderStatus === RecStatus.Recording;
@@ -103,7 +107,7 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
 
     return (
       <div className="flex flex-row gap-x-6">
-        <div className="flex flex-col w-[140px]">
+        <div className="flex flex-col w-[160px]">
           <Label htmlFor="recordRetailPtr" className="flex items-center">
             {getLocalePhrase(appState.language, Phrase.RecordFFXIVLabel)}
             <Tooltip
@@ -157,10 +161,40 @@ const FlavourSettings: React.FC<IProps> = (props: IProps) => {
         )}
       </div>
     );
+
+  //classic ptr
+  };
+
+  const setRecordClassicPtr = (checked: boolean) => {
+    setConfig((prevState) => {
+      return {
+        ...prevState,
+        recordClassicPtr: checked,
+      };
+    });
+  };
+
+  const setClassicPtrLogPath = async () => {
+    if (isComponentDisabled()) {
+      return;
+    }
+
+    const newPath = await pathSelect();
+
+    if (newPath === '') {
+      return;
+    }
+
+    setConfig((prevState) => {
+      return {
+        ...prevState,
+        classicPtrLogPath: newPath,
+      };
+    });
   };
 
   return (
-    <div className="flex flex-col gap-y-8">
+    <div className="flex flex-col gap-y-2">
       {getDisabledText()}
       {getXIVSettings()}
     </div>
