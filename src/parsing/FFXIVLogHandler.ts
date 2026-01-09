@@ -29,10 +29,7 @@ export default class FfXIVLogHandler extends LogHandler {
   private startTime: Date;
   private cfg: ConfigService;
 
-  constructor(
-    xivLogPath: string,
-    cfg: ConfigService,
-  ) {
+  constructor(xivLogPath: string, cfg: ConfigService) {
     super(xivLogPath, 10);
     this.clockOffset = 0;
     this.ffclockOffsetList = [];
@@ -55,13 +52,12 @@ export default class FfXIVLogHandler extends LogHandler {
     console.log('Restored last known map: ', this.zoneName);
 
     this.offsetWatcher = new ClockOffsetWatcher();
-    this.offsetWatcher.on("offsetUpdated", (event) => {
-      console.info("updated clock offset", event.offsetMs);
+    this.offsetWatcher.on('offsetUpdated', (event) => {
+      console.info('updated clock offset', event.offsetMs);
       this.clockOffset = event.offsetMs;
     });
     this.offsetWatcher.start();
     this.combatLogWatcher.watch();
-
   }
 
   public dispose() {
@@ -168,15 +164,17 @@ export default class FfXIVLogHandler extends LogHandler {
       line.rawLine = this.zoneName;
       if (this.ffclockOffset != 0) {
         console.log('Applying FF clock offset (ms):', this.ffclockOffset);
-        this.startTime = new Date(new Date(line.line[1]).getTime() - this.ffclockOffset);
+        this.startTime = new Date(
+          new Date(line.line[1]).getTime() - this.ffclockOffset,
+        );
       } else {
         this.startTime = new Date(Date.now());
-        
       }
       line.line[1] = this.startTime.toISOString();
       //new Date(new Date(line.line[1]).getTime() + this.clockOffset).toISOString();
       super.handleEncounterStartLine(line, Flavour.FFXIV);
-      if (FfXIVLogHandler.activity) FfXIVLogHandler.activity.playerGUID = this.playerName;
+      if (FfXIVLogHandler.activity)
+        FfXIVLogHandler.activity.playerGUID = this.playerName;
     }
 
     //fin de combat
@@ -214,11 +212,7 @@ export default class FfXIVLogHandler extends LogHandler {
 
     // On récupère les combattants que dans les 10 premières secondes, le temps de voir si il faut annuler la vidéo,
     // après on arrête de vérifier pour éviter du process inutile.
-    if (
-      new Date(Date.now()).getTime() - this.startTime.getTime() <
-      10000
-    ) {
-
+    if (new Date(Date.now()).getTime() - this.startTime.getTime() < 10000) {
       const entity = event.line[3];
       const id = event.line[2];
       const owner = event.line[47];
@@ -229,29 +223,40 @@ export default class FfXIVLogHandler extends LogHandler {
         FfXIVLogHandler.forceEndActivity();
       }
     }
-      const targetEntity = event.line[7];
-      const targetId = event.line[6];
-      const targetCurrentHealth = event.line[24];
-      const targetMaxHealth = event.line[25];
-      const sourceId = event.line[2];
+    const targetEntity = event.line[7];
+    const targetId = event.line[6];
+    const targetCurrentHealth = event.line[24];
+    const targetMaxHealth = event.line[25];
+    const sourceId = event.line[2];
 
-      this.checkAddEnnemy(
-        targetEntity,
-        targetId,
-        targetCurrentHealth,
-        targetMaxHealth,
-        sourceId,
-      );
+    this.checkAddEnnemy(
+      targetEntity,
+      targetId,
+      targetCurrentHealth,
+      targetMaxHealth,
+      sourceId,
+    );
 
-      let player = FfXIVLogHandler.activity.getCombatant(event.line[3]);
-      if (player && player.jobName == "") {
-        JobChecker.getJobNameFromActionId(event.line[4]).then(jobName => {
-          if (jobName) {
-            player.jobName = jobName;
-            console.info("Found job / class for combatant : ", player.name, player.jobName);
+    this.checkUpdateEnnemy(
+      targetEntity,
+      targetId,
+      targetCurrentHealth,
+      targetMaxHealth,
+    );
+
+    let player = FfXIVLogHandler.activity.getCombatant(event.line[3]);
+    if (player && player.jobName == '') {
+      JobChecker.getJobNameFromActionId(event.line[4]).then((jobName) => {
+        if (jobName) {
+          player.jobName = jobName;
+          console.info(
+            'Found job / class for combatant : ',
+            player.name,
+            player.jobName,
+          );
         }
-        });
-      }
+      });
+    }
   }
 
   private checkAddEnnemy(
@@ -291,15 +296,16 @@ export default class FfXIVLogHandler extends LogHandler {
     if (ennemy) {
       let health = parseInt(currentHealth);
       let maxHealthParsed = parseInt(maxHealth);
-      if (!Number.isNaN(health) && !Number.isNaN(maxHealthParsed)) {
+      if (!Number.isNaN(health)) {
         ennemy.health = health;
+      }
+      if (!Number.isNaN(maxHealthParsed)) {
         ennemy.maxHealth = maxHealthParsed;
       }
     }
   }
 
   private computeFFClockOffset(fftime: string) {
-    console.log('date line', fftime);
     let ffTime = Date.parse(fftime);
     let ffToLocaleOffset = Date.now() - ffTime;
     this.ffclockOffsetList.push(ffToLocaleOffset);
@@ -309,7 +315,6 @@ export default class FfXIVLogHandler extends LogHandler {
     if (this.ffclockOffsetList.length >= 20) {
       let sum = this.ffclockOffsetList.reduce((a, b) => a + b, 0);
       this.ffclockOffset = Math.round(sum / this.ffclockOffsetList.length);
-      console.log('FF time offset updated (ms):', this.ffclockOffset);
     }
   }
 
@@ -318,7 +323,8 @@ export default class FfXIVLogHandler extends LogHandler {
     this.computeFFClockOffset(event.line[1]);
     if (event.line.length < 6) return;
     if (
-      new Date(Date.now()).getTime() - FfXIVLogHandler.activity.startDate.getTime() <
+      new Date(Date.now()).getTime() -
+        FfXIVLogHandler.activity.startDate.getTime() <
       10000
     )
       return;
@@ -343,7 +349,7 @@ export default class FfXIVLogHandler extends LogHandler {
     const entityName = event.line[3];
     const id = event.line[2];
     const player = FfXIVLogHandler.activity.getCombatant(entityName);
-    event.line[1] = new Date(Date.now()).toISOString();//new Date(new Date(event.line[1]).getTime() + this.clockOffset).toISOString();
+    event.line[1] = new Date(Date.now()).toISOString(); //new Date(new Date(event.line[1]).getTime() + this.clockOffset).toISOString();
 
     if (player) {
       super.handleUnitDiedLine(event);
