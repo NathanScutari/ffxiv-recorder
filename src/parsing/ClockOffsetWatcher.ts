@@ -1,4 +1,5 @@
 import { EventEmitter } from 'stream';
+import { Client } from 'ntp-time';
 import fetch from 'node-fetch';
 
 type OffsetUpdatedEvent = CustomEvent<{ offsetMs: number }>;
@@ -30,22 +31,40 @@ export class ClockOffsetWatcher extends EventEmitter {
     }
   }
 
+  private async getAverageOffset(attempts = 5) {
+    const client = new Client('pool.ntp.org');
+    const offsets: number[] = [];
+
+    for (let i = 0; i < attempts; i++) {
+      const before = Date.now();
+      const packet = await client.syncTime();
+      const after = Date.now();
+
+      const roundTrip = after - before;
+      const estimatedLocalAtReceive = before + roundTrip / 2;
+      const offset = estimatedLocalAtReceive - packet.time.getTime();
+      console.log('Offset (ms) :', offset);
+      offsets.push(offset);
+
+      // Petit délai pour éviter le spam
+      await new Promise((res) => setTimeout(res, 500));
+    }
+
+    const avgOffset = offsets.reduce((a, b) => a + b, 0) / offsets.length;
+    return avgOffset;
+  }
+
   private async checkOffset() {
     try {
-    const before = Date.now();
-    const res = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC');
-    const after = Date.now();
+      // offset en ms
+      const offset = await this.getAverageOffset();
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json() as TimeApiResponse;
-    const serverUtc = new Date(data.dateTime + 'Z').getTime();
-    const requestTime = after - before;
-    const estimatedLocalAtReceive = before + requestTime / 2;
-    const offset = estimatedLocalAtReceive - serverUtc;
-
-    this.emit('offsetUpdated', { offsetMs: offset });
-  } catch (err) {
-    console.error('[ClockOffsetWatcher] Failed to check offset:', err);
-  }
+      console.log('Offset avg (ms) :', offset);
+      this.emit('offsetUpdated', { offsetMs: offset });
+      return offset;
+    } catch (err) {
+      console.error('[ClockOffsetWatcher] Failed to check offset:', err);
+      throw err;
+    }
   }
 }

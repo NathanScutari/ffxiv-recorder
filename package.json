@@ -157,6 +157,7 @@
     "node-abi": "^4.14.0",
     "node-fetch": "^3.3.2",
     "noobs": "^0.0.181",
+    "ntp-time": "^2.1.0",
     "path": "^0.12.7",
     "queue-promise": "^2.2.1",
     "re-resizable": "^6.9.11",

@@ -24,6 +24,8 @@ export default class FfXIVLogHandler extends LogHandler {
 
   private offsetWatcher: ClockOffsetWatcher;
   private clockOffset: number;
+  private ffclockOffsetList: number[] = [];
+  private ffclockOffset: number;
   private startTime: Date;
   private cfg: ConfigService;
 
@@ -33,6 +35,8 @@ export default class FfXIVLogHandler extends LogHandler {
   ) {
     super(xivLogPath, 10);
     this.clockOffset = 0;
+    this.ffclockOffsetList = [];
+    this.ffclockOffset = 0;
     this.isInCombat = false;
     this.combatLogWatcher = new CombatLogWatcherFFXIV(xivLogPath, 15000);
     this.startTime = new Date(Date.now());
@@ -162,8 +166,15 @@ export default class FfXIVLogHandler extends LogHandler {
       this.ennemyList.clear();
       this.isInCombat = true;
       line.rawLine = this.zoneName;
-      this.startTime = new Date(Date.now());
-      line.line[1] = this.startTime.toISOString();//new Date(new Date(line.line[1]).getTime() + this.clockOffset).toISOString();
+      if (this.ffclockOffset != 0) {
+        console.log('Applying FF clock offset (ms):', this.ffclockOffset);
+        this.startTime = new Date(new Date(line.line[1]).getTime() - this.ffclockOffset);
+      } else {
+        this.startTime = new Date(Date.now());
+        
+      }
+      line.line[1] = this.startTime.toISOString();
+      //new Date(new Date(line.line[1]).getTime() + this.clockOffset).toISOString();
       super.handleEncounterStartLine(line, Flavour.FFXIV);
       if (FfXIVLogHandler.activity) FfXIVLogHandler.activity.playerGUID = this.playerName;
     }
@@ -287,8 +298,24 @@ export default class FfXIVLogHandler extends LogHandler {
     }
   }
 
+  private computeFFClockOffset(fftime: string) {
+    console.log('date line', fftime);
+    let ffTime = Date.parse(fftime);
+    let ffToLocaleOffset = Date.now() - ffTime;
+    this.ffclockOffsetList.push(ffToLocaleOffset);
+    if (this.ffclockOffsetList.length > 30) {
+      this.ffclockOffsetList.shift();
+    }
+    if (this.ffclockOffsetList.length >= 20) {
+      let sum = this.ffclockOffsetList.reduce((a, b) => a + b, 0);
+      this.ffclockOffset = Math.round(sum / this.ffclockOffsetList.length);
+      console.log('FF time offset updated (ms):', this.ffclockOffset);
+    }
+  }
+
   private handleUnitDamageEvent(event: LogLineFFXIV): void {
     if (!FfXIVLogHandler.activity) return;
+    this.computeFFClockOffset(event.line[1]);
     if (event.line.length < 6) return;
     if (
       new Date(Date.now()).getTime() - FfXIVLogHandler.activity.startDate.getTime() <
