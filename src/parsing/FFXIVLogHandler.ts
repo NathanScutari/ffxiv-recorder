@@ -249,6 +249,7 @@ export default class FfXIVLogHandler extends LogHandler {
       JobChecker.getJobNameFromActionId(event.line[4]).then((jobName) => {
         if (jobName) {
           player.jobName = jobName;
+          player.realm = jobName;
           console.info(
             'Found job / class for combatant : ',
             player.name,

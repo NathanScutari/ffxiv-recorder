@@ -49,7 +49,7 @@ export default function ViewpointSelection(props: IProps) {
       // combatants we have a viewpoint for will be colored, else they will
       // be gray.
       const v = matches[0];
-      unitClass = combatant._jobName;
+      unitClass = combatant._realm;
       povAvailable = true;
     }
 

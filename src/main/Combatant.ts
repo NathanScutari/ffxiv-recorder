@@ -52,6 +52,10 @@ export default class Combatant {
     return this._realm;
   }
 
+  set realm(realm) {
+    this._realm = realm;
+  }
+
   /**
    * Gets the team ID.
 
