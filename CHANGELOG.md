@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.3.2] - 2026-01-11 - FFXIV Recorder
+### Fixed
+- Added a very small wait time when end of combat is detected to be able to receive boss death info (ff combat end trigger is too fast)
+
 ## [8.3.1] - 2026-01-11 - FFXIV Recorder
 ### Changed
 - Now using combat detection by the game itself instead of ACT so it is not dependant on ACT config and considers the whole groupe in combat even when only one person hit (also prevents from stopping a combat during a cutscene if someone has ACT misconfigured)

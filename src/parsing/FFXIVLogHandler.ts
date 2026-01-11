@@ -182,7 +182,10 @@ export default class FfXIVLogHandler extends LogHandler {
     //fin de combat
     if (this.isInCombat && inFFCombat == '0') {
       this.isInCombat = false;
-      this.handleEncounterEndLine(this.ennemyList);
+      console.log("End of combat detected, waiting 2s before finalizing...");
+      setTimeout(() => {
+        this.handleEncounterEndLine(this.ennemyList);
+      }, 2000); //attendre un peu pour avoir le temps de recevoir les derniers events de mort (mort du boss), ff fait sortir du combat trop vite.
     }
   }
 
