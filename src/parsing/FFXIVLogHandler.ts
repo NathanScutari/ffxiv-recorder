@@ -154,11 +154,12 @@ export default class FfXIVLogHandler extends LogHandler {
 
   private handleInCombatLine(line: LogLineFFXIV): void {
     const inActCombat = line.line[2];
+    const inFFCombat = line.line[3];
 
-    console.log('Combat event', line.rawLine);
+    console.log('Combat event', inActCombat, inFFCombat);
 
     //début de combat
-    if (!this.isInCombat && inActCombat == '1') {
+    if (!this.isInCombat && inFFCombat == '1') {
       this.ennemyList.clear();
       this.isInCombat = true;
       line.rawLine = this.zoneName;
@@ -179,7 +180,7 @@ export default class FfXIVLogHandler extends LogHandler {
     }
 
     //fin de combat
-    if (this.isInCombat && inActCombat == '0') {
+    if (this.isInCombat && inFFCombat == '0') {
       this.isInCombat = false;
       this.handleEncounterEndLine(this.ennemyList);
     }
