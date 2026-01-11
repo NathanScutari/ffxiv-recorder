@@ -164,8 +164,9 @@ export default class FfXIVLogHandler extends LogHandler {
       line.rawLine = this.zoneName;
       if (this.ffclockOffset != 0) {
         console.log('Applying FF clock offset (ms):', this.ffclockOffset);
+        console.log(new Date(Date.now()));
         this.startTime = new Date(
-          new Date(line.line[1]).getTime() - this.ffclockOffset,
+          new Date(line.line[1]).getTime() + this.ffclockOffset,
         );
       } else {
         this.startTime = new Date(Date.now());
@@ -218,7 +219,7 @@ export default class FfXIVLogHandler extends LogHandler {
       const owner = event.line[47];
       this.checkForCombatant(entity, id, owner);
     } else {
-      if (FfXIVLogHandler.activity.getPlayerCount() < 8) {
+      if (FfXIVLogHandler.activity.getPlayerCount() < LogHandler.MinCombatantsForRaid) {
         console.info('Force stopping, not 8 player content');
         FfXIVLogHandler.forceEndActivity();
       }

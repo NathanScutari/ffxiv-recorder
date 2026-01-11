@@ -1,4 +1,5 @@
 import VideoProcessQueue from '../main/VideoProcessQueue';
+import { configSchema, ConfigurationSchema } from 'config/configSchema';
 import Combatant from '../main/Combatant';
 import ConfigService from '../config/ConfigService';
 import Recorder from '../main/Recorder';
@@ -32,6 +33,7 @@ import CombatLogWatcher from './CombatLogWatcher';
 import CombatLogWatcherFFXIV from './CombatLogWatcherFFXIV';
 import { CombatantData } from './CombatData';
 import Ennemy from 'main/Ennemy';
+import { last } from 'lodash';
 
 /**
  * Generic LogHandler class. Everything in this class must be valid for both
@@ -50,6 +52,8 @@ export default abstract class LogHandler {
   public static overrunning = false;
 
   private static minBossHp = 100 * 10 ** 6;
+
+  public static MinCombatantsForRaid = 8;
 
   public combatLogWatcher: CombatLogWatcherFFXIV;
 
@@ -351,6 +355,13 @@ export default abstract class LogHandler {
 
         if (notLongEnough) {
           console.info('[LogHandler] Discarding raid encounter, too short');
+          return;
+        }
+
+        if (lastActivity.combatantMap.size < LogHandler.MinCombatantsForRaid) {
+          console.info(
+            '[LogHandler] Discarding raid encounter, not enough combatants',
+          );
           return;
         }
       }
