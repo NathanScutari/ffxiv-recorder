@@ -22,7 +22,7 @@ export default class FfXIVLogHandler extends LogHandler {
 
   private ennemyList: Map<string, Ennemy>;
 
-  private offsetWatcher: ClockOffsetWatcher;
+  //private offsetWatcher: ClockOffsetWatcher;
   private clockOffset: number;
   private ffclockOffsetList: number[] = [];
   private ffclockOffset: number;
@@ -51,18 +51,18 @@ export default class FfXIVLogHandler extends LogHandler {
     console.log('Restored last known player name: ', this.playerName);
     console.log('Restored last known map: ', this.zoneName);
 
-    this.offsetWatcher = new ClockOffsetWatcher();
-    this.offsetWatcher.on('offsetUpdated', (event) => {
-      console.info('updated clock offset', event.offsetMs);
-      this.clockOffset = event.offsetMs;
-    });
-    this.offsetWatcher.start();
+    // this.offsetWatcher = new ClockOffsetWatcher();
+    // this.offsetWatcher.on('offsetUpdated', (event) => {
+    //   console.info('updated clock offset', event.offsetMs);
+    //   this.clockOffset = event.offsetMs;
+    // });
+    // this.offsetWatcher.start();
     this.combatLogWatcher.watch();
   }
 
   public dispose() {
     this.combatLogWatcher.unwatch();
-    this.offsetWatcher.stop();
+    //this.offsetWatcher.stop();
   }
 
   private isLogLine(event: any): event is LogLineFFXIV {
@@ -135,8 +135,50 @@ export default class FfXIVLogHandler extends LogHandler {
       case '260': // inCombat
         this.handleInCombatLine(event);
         break;
+      case '00': // log message
+        this.handleLogMessage(event);
+        break;
       default:
         break;
+    }
+  }
+
+  private handleLogMessage(line: LogLineFFXIV): void {
+    const messageId = line.line[2];
+
+    if (messageId === '0039') {
+      console.log('Engage!');
+
+      if (!FfXIVLogHandler.activity) {
+        this.ennemyList.clear();
+        line.rawLine = this.zoneName;
+        // if (this.ffclockOffset != 0) {
+        //   console.log('Applying FF clock offset (ms):', this.ffclockOffset);
+        //   this.startTime = new Date(
+        //     new Date(line.line[1]).getTime() + this.ffclockOffset,
+        //   );
+        // } else {
+        //   this.startTime = new Date(Date.now());
+        // }
+        this.startTime = new Date(Date.now());
+        line.line[1] = this.startTime.toISOString();
+        super.handleEncounterStartLine(line, Flavour.FFXIV);
+        if (LogHandler.activity)
+          LogHandler.activity.playerGUID = this.playerName;
+        setTimeout(() => {
+          this.checkCombatStarted();
+        }, 2000);
+      }
+    }
+  }
+
+  private checkCombatStarted(): void {
+    if (!FfXIVLogHandler.activity) return;
+
+    if (!this.isInCombat) {
+      console.log('No engage detected, stopping recording.');
+      this.isInCombat = false;
+      FfXIVLogHandler.forceEndActivity();
     }
   }
 
@@ -156,36 +198,17 @@ export default class FfXIVLogHandler extends LogHandler {
     const inActCombat = line.line[2];
     const inFFCombat = line.line[3];
 
-    console.log('Combat event', inActCombat, inFFCombat);
+    console.log('Combat event', line.rawLine);
 
     //début de combat
     if (!this.isInCombat && inFFCombat == '1') {
-      this.ennemyList.clear();
       this.isInCombat = true;
-      line.rawLine = this.zoneName;
-      if (this.ffclockOffset != 0) {
-        console.log('Applying FF clock offset (ms):', this.ffclockOffset);
-        console.log(new Date(Date.now()));
-        this.startTime = new Date(
-          new Date(line.line[1]).getTime() + this.ffclockOffset,
-        );
-      } else {
-        this.startTime = new Date(Date.now());
-      }
-      line.line[1] = this.startTime.toISOString();
-      //new Date(new Date(line.line[1]).getTime() + this.clockOffset).toISOString();
-      super.handleEncounterStartLine(line, Flavour.FFXIV);
-      if (FfXIVLogHandler.activity)
-        FfXIVLogHandler.activity.playerGUID = this.playerName;
     }
 
     //fin de combat
-    if (this.isInCombat && inFFCombat == '0') {
+    if (this.isInCombat && inFFCombat == '0' && inActCombat == '0') {
       this.isInCombat = false;
-      console.log("End of combat detected, waiting 2s before finalizing...");
-      setTimeout(() => {
-        this.handleEncounterEndLine(this.ennemyList);
-      }, 2000); //attendre un peu pour avoir le temps de recevoir les derniers events de mort (mort du boss), ff fait sortir du combat trop vite.
+      this.handleEncounterEndLine(this.ennemyList);
     }
   }
 
@@ -223,7 +246,10 @@ export default class FfXIVLogHandler extends LogHandler {
       const owner = event.line[47];
       this.checkForCombatant(entity, id, owner);
     } else {
-      if (FfXIVLogHandler.activity.getPlayerCount() < LogHandler.MinCombatantsForRaid) {
+      if (
+        FfXIVLogHandler.activity.getPlayerCount() <
+        LogHandler.MinCombatantsForRaid
+      ) {
         console.info('Force stopping, not 8 player content');
         FfXIVLogHandler.forceEndActivity();
       }
@@ -326,7 +352,7 @@ export default class FfXIVLogHandler extends LogHandler {
 
   private handleUnitDamageEvent(event: LogLineFFXIV): void {
     if (!FfXIVLogHandler.activity) return;
-    this.computeFFClockOffset(event.line[1]);
+    // this.computeFFClockOffset(event.line[1]);
     if (event.line.length < 6) return;
     if (
       new Date(Date.now()).getTime() -
