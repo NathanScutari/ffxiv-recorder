@@ -29,6 +29,8 @@ export default class FfXIVLogHandler extends LogHandler {
   private startTime: Date;
   private cfg: ConfigService;
 
+  private nextEnnemyCheckTime: Date = new Date(Date.now());
+
   constructor(xivLogPath: string, cfg: ConfigService) {
     super(xivLogPath, 10);
     this.clockOffset = 0;
@@ -330,6 +332,9 @@ export default class FfXIVLogHandler extends LogHandler {
       let maxHealthParsed = parseInt(maxHealth);
       if (!Number.isNaN(health)) {
         ennemy.health = health;
+        if (health == 0) {
+          ennemy.isDead = true;
+        }
       }
       if (!Number.isNaN(maxHealthParsed)) {
         ennemy.maxHealth = maxHealthParsed;
@@ -368,6 +373,17 @@ export default class FfXIVLogHandler extends LogHandler {
     const id = event.line[2];
 
     this.checkUpdateEnnemy(entity, id, currentHealth, maxHealth);
+
+    if (new Date(Date.now()).getTime() > this.nextEnnemyCheckTime.getTime()) {
+      this.nextEnnemyCheckTime = new Date(Date.now() + 2000);
+      
+      for (const ennemy of this.ennemyList.values()) {
+        if (ennemy.checkMark()) {
+          console.log('Removing marked ennemy: ', ennemy.name, ennemy.id);
+          this.ennemyList.delete(ennemy.id);
+        }
+      }
+    }
   }
 
   protected async handleEncounterEndLine(ennemyList: Map<string, Ennemy>) {
@@ -391,7 +407,9 @@ export default class FfXIVLogHandler extends LogHandler {
     const ennemy = this.ennemyList.get(id);
     if (!ennemy) return;
 
-    console.log('Ennemy dead: ', ennemy.name, ennemy.id);
+    console.log('Ennemy marked for death: ', ennemy.name, ennemy.id);
+    ennemy.markForRemoval();
     ennemy.isDead = true;
+    ennemy.health = 0;
   }
 }
