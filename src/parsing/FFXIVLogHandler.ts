@@ -148,7 +148,8 @@ export default class FfXIVLogHandler extends LogHandler {
   private handleLogMessage(line: LogLineFFXIV): void {
     const messageId = line.line[2];
 
-    if (messageId === '0039') {
+    if (messageId === '0039' && (line.line[4] === 'Engage!' || line.line[4] === "À l'attaque!")) {
+      console.log(line.rawLine);
       console.log('Engage!');
 
       if (!FfXIVLogHandler.activity) {
