@@ -4,6 +4,8 @@ import { RawChallengeModeTimelineSegment } from './keystone';
 import { VideoCategory } from '../types/VideoCategory';
 import { Tag } from 'react-tag-autocomplete';
 import { DateValueType } from 'react-tailwindcss-datepicker';
+import { ESupportedEncoders } from './obsEnums';
+import { ReactNode } from 'react';
 
 /**
  * Application recording status.
@@ -27,6 +29,11 @@ enum RecStatus {
   Reconfiguring,
 }
 
+type ActivityStatus = {
+  category: VideoCategory;
+  start: number;
+};
+
 enum MicStatus {
   NONE,
   MUTED,
@@ -40,6 +47,14 @@ enum SaveStatus {
   Saving,
   NotSaving,
 }
+
+/**
+ * Kill video creation status.
+ */
+type KillVideoStatus = {
+  queued: number;
+  perc: number;
+};
 
 /**
  * We display any OBS crashes on the frontend so we don't silently recover
@@ -161,8 +176,9 @@ type FileInfo = {
 };
 
 type VideoQueueItem = {
-  source: string;
-  suffix: string;
+  name: string; // Can be an OBS timestamp if recording or more complicated if clipping.
+  source: string; // Can be either a path or a URL.
+  suffix: string; // Typically details of the recording, but can also be a "clipped at ..." description.
   offset: number;
   duration: number;
   clip: boolean;
@@ -177,6 +193,8 @@ type VideoQueueItem = {
 type Metadata = {
   category: VideoCategory;
   parentCategory?: VideoCategory; // present if it's a clip
+  parentVideoName?: string; // present if a clip knows the parent video name
+  parentVideoOffset?: number; // seconds into the source video where the clip starts
   duration: number;
   start?: number; // epoch start time of activity
   clippedAt?: number; // epoch time of clipping
@@ -207,10 +225,13 @@ type Metadata = {
   delete?: boolean; // signals video should be deleted when possible
   uniqueHash?: string; // used for cloud video grouping
   bossPercent?: number;
+  appVersion?: string;
+  encoder?: ESupportedEncoders; // encoder used to record
+  size?: number; // size of video in bytes
 };
 
 /**
- * We mandata some fields are present for cloud videos that are optional for
+ * We mandate some fields are present for cloud videos that are optional for
  * disk based videos.
  */
 type CloudMetadata = Metadata & {
@@ -261,6 +282,8 @@ type RendererVideo = Metadata & {
   uniqueId: string;
 };
 
+type RendererClip = RendererVideo & { category: VideoCategory.Clips };
+
 type SoloShuffleTimelineSegment = {
   round: number;
   timestamp: number;
@@ -299,6 +322,17 @@ type AudioSource = {
   volume: number; // Current volume setting (0-1)
 };
 
+type Character = {
+  name: string;
+  realm: string;
+  specID: number;
+};
+
+type CharacterFilter = {
+  name: string;
+  realm: string;
+};
+
 /**
  * If we should be showing a certain page. This always takes priority over anything
  * else in TNavigatorState.
@@ -307,6 +341,7 @@ enum Pages {
   'None',
   'SceneEditor',
   'Settings',
+  'InstantReplay',
 }
 
 /**
@@ -337,6 +372,14 @@ type AppState = {
   diskStatus: DiskStatus;
   chatOpen: boolean;
   preferredViewpoint: string;
+};
+
+type AdvancedLoggingStatus = {
+  retail: boolean;
+  classic: boolean;
+  era: boolean;
+  retailPtr: boolean;
+  classicPtr: boolean;
 };
 
 type CloudState = {
@@ -447,7 +490,7 @@ type VideoMarker = {
 
 type SliderMark = {
   value: number;
-  label: JSX.Element;
+  label: ReactNode;
 };
 
 type CloudStatus = {
@@ -461,6 +504,7 @@ type CloudStatus = {
   del: boolean;
   usage: number;
   limit: number;
+  migrated: boolean;
 };
 
 type DiskStatus = {
@@ -482,6 +526,21 @@ interface IBrowserWindow {
 
 type UploadQueueItem = {
   path: string;
+};
+
+type KillVideoQueueItem = {
+  uuid: string; // unique job uuid
+  width: number;
+  height: number;
+  fps: number;
+  segments: KillVideoSegment[];
+  audioTrackIndex: number; // -1 for splicing all tracks
+};
+
+type KillVideoSegment = {
+  video: RendererVideo;
+  start: number;
+  stop: number;
 };
 
 type CreateMultiPartUploadResponseBody = {
@@ -621,6 +680,19 @@ enum SoundAlerts {
   MANUAL_RECORDING_STOP = 'manual-recording-stop',
 }
 
+type InstantReplayData = {
+  path: string;
+  category: VideoCategory;
+  deaths: PlayerDeathType[];
+  challengeModeTimeline?: RawChallengeModeTimelineSegment[];
+  soloShuffleTimeline?: SoloShuffleTimelineSegment[];
+};
+
+type InstantReplayState = {
+  current: InstantReplayData | null;
+  open: InstantReplayData | null;
+};
+
 export {
   RecStatus,
   SaveStatus,
@@ -637,6 +709,7 @@ export {
   VideoQueueItem,
   Metadata,
   RendererVideo,
+  RendererClip,
   Flavour,
   SoloShuffleTimelineSegment,
   EDeviceType,
@@ -682,4 +755,13 @@ export {
   WowProcessEvent,
   SoundAlerts,
   CloudState,
+  ActivityStatus,
+  AdvancedLoggingStatus,
+  KillVideoQueueItem,
+  KillVideoSegment,
+  KillVideoStatus,
+  Character,
+  CharacterFilter,
+  InstantReplayData,
+  InstantReplayState,
 };

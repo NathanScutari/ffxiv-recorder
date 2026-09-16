@@ -1,19 +1,16 @@
 import { AppState, RendererVideo } from 'main/types';
 
 import { Cell, flexRender, Header, Row, Table } from '@tanstack/react-table';
-import React, {
-  Fragment,
-  MutableRefObject,
-  useCallback,
-  useEffect,
-} from 'react';
+import React, { Fragment, RefObject, useCallback, useEffect } from 'react';
 import {
   ArrowDown,
+  ArrowDownUp,
   ArrowUp,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  MousePointer,
 } from 'lucide-react';
 import { povDiskFirstNameSort } from '../../rendererutils';
 import { Button } from '../Button/Button';
@@ -25,7 +22,7 @@ interface IProps {
   table: Table<RendererVideo>;
   appState: AppState;
   setAppState: React.Dispatch<React.SetStateAction<AppState>>;
-  persistentProgress: MutableRefObject<number>;
+  persistentProgress: RefObject<number>;
 }
 
 /**
@@ -39,7 +36,12 @@ const VideoSelectionTable = (props: IProps) => {
     dateRangeFilter,
     storageFilter,
     preferredViewpoint,
+    language,
   } = appState;
+
+  const { pageIndex, pageSize } = table.getState().pagination;
+  const selectedRowRef = React.useRef<HTMLTableRowElement>(null);
+  const hasScrolledToSelection = React.useRef(false);
 
   /**
    * Mark the row as selected and update the video player to play the first
@@ -122,10 +124,13 @@ const VideoSelectionTable = (props: IProps) => {
    */
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const sortedRows = table.getSortedRowModel().rows;
-      const selectedRows = table.getSelectedRowModel().rows;
+      if (event.repeat) {
+        return;
+      }
 
       if (event.key === 'a' && event.ctrlKey) {
+        const sortedRows = table.getSortedRowModel().rows;
+
         sortedRows.forEach((row) => {
           if (!row.getIsSelected()) {
             row.getToggleSelectedHandler()(event);
@@ -137,10 +142,10 @@ const VideoSelectionTable = (props: IProps) => {
         return;
       }
 
-      if (
-        (event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
-        !event.repeat
-      ) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        const sortedRows = table.getSortedRowModel().rows;
+        const selectedRows = table.getSelectedRowModel().rows;
+
         if (selectedRows.length === 0) return;
 
         const currentRow =
@@ -177,6 +182,36 @@ const VideoSelectionTable = (props: IProps) => {
     };
   }, [table, onRowClick, videoFilterTags, dateRangeFilter, storageFilter]);
 
+  // If we've navigated here programatically (i.e. via the clip source button),
+  // then we may already have a selected video that is not the first row. Just
+  // call this whenever we mount. It's harmless if the first row is selected.
+  useEffect(() => {
+    if (hasScrolledToSelection.current) {
+      return undefined;
+    }
+
+    hasScrolledToSelection.current = true;
+    const selectedIndex = table.getSelectedRowModel().rows[0]?.index ?? 0;
+    const selectedPageIndex = Math.floor(selectedIndex / pageSize);
+
+    if (selectedPageIndex !== pageIndex) {
+      table.setPageIndex(selectedPageIndex);
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      if (!selectedRowRef.current) {
+        return;
+      }
+
+      selectedRowRef.current.scrollIntoView({
+        block: 'center',
+        behavior: 'smooth',
+      });
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [pageIndex, pageSize, table]);
+
   /**
    * Render an individual header.
    */
@@ -185,16 +220,16 @@ const VideoSelectionTable = (props: IProps) => {
 
     if (header.column.getCanSort()) {
       if (header.column.getNextSortingOrder() === 'asc') {
-        tooltip = getLocalePhrase(appState.language, Phrase.ClickToSortAsc);
+        tooltip = getLocalePhrase(language, Phrase.ClickToSortAsc);
       } else if (header.column.getNextSortingOrder() === 'desc') {
-        tooltip = getLocalePhrase(appState.language, Phrase.ClickToSortDec);
+        tooltip = getLocalePhrase(language, Phrase.ClickToSortDec);
       } else {
-        tooltip = getLocalePhrase(appState.language, Phrase.ClickToClearSort);
+        tooltip = getLocalePhrase(language, Phrase.ClickToClearSort);
       }
     }
 
     if (header.id === 'Select') {
-      tooltip = getLocalePhrase(appState.language, Phrase.ClickToSelectAll);
+      tooltip = getLocalePhrase(language, Phrase.ClickToSelectAll);
     }
 
     const width =
@@ -269,6 +304,7 @@ const VideoSelectionTable = (props: IProps) => {
     return (
       <tr
         key={row.id}
+        ref={selected ? selectedRowRef : undefined}
         className={className}
         onClick={(event) => onRowClick(event, row)}
       >
@@ -297,6 +333,21 @@ const VideoSelectionTable = (props: IProps) => {
     return <tbody>{rows.map((row, i) => renderRow(row, i))}</tbody>;
   };
 
+  const renderHotkeyTipPointer = (key: string, action: Phrase) => {
+    const { language } = appState;
+
+    return (
+      <div className="flex gap-1 items-center text-foreground-lighter text-sm">
+        <div className="inline-flex whitespace-nowrap items-center border border-card rounded-sm p-1 bg-card">
+          {key} + <MousePointer size={16} />
+        </div>
+        <div className="text-foreground">
+          {getLocalePhrase(language, action)}
+        </div>
+      </div>
+    );
+  };
+
   /**
    * For performance reasons we render videos in pages of 100. The component
    * returns buttons to navigate the pages in the list.
@@ -307,46 +358,77 @@ const VideoSelectionTable = (props: IProps) => {
     const indicator = `${current} of ${total}`;
 
     return (
-      <div className="flex w-full justify-center items-center gap-2 border-t border-video-border pt-2">
-        <Button
-          className="p-1"
-          onClick={() => table.firstPage()}
-          disabled={!table.getCanPreviousPage()}
-          size="sm"
-          variant="secondary"
-        >
-          <ChevronsLeft />
-        </Button>
-        <Button
-          className="p-1"
-          onClick={() => table.previousPage()}
-          disabled={!table.getCanPreviousPage()}
-          size="sm"
-          variant="secondary"
-        >
-          <ChevronLeft />
-        </Button>
-        <Button
-          className="p-1"
-          onClick={() => table.nextPage()}
-          disabled={!table.getCanNextPage()}
-          size="sm"
-          variant="secondary"
-        >
-          <ChevronRight />
-        </Button>
-        <Button
-          className="p-1"
-          onClick={() => table.lastPage()}
-          disabled={!table.getCanNextPage()}
-          size="sm"
-          variant="secondary"
-        >
-          <ChevronsRight />
-        </Button>
-        <span className="flex items-center gap-1">
-          <strong>{indicator}</strong>
-        </span>
+      <div className="grid w-full grid-cols-3 items-center border-t border-video-border pt-2">
+        <div className="flex gap-4">
+          {renderHotkeyTipPointer('Shift', Phrase.SelectRange)}
+          {renderHotkeyTipPointer('Ctrl', Phrase.SelectMultiple)}
+        </div>
+
+        <div className="flex justify-center items-center gap-2">
+          <Button
+            className="p-1"
+            onClick={() => table.firstPage()}
+            disabled={!table.getCanPreviousPage()}
+            size="xs"
+            variant="secondary"
+          >
+            <ChevronsLeft size={16} />
+          </Button>
+
+          <Button
+            className="p-1"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+            size="xs"
+            variant="secondary"
+          >
+            <ChevronLeft size={16} />
+          </Button>
+
+          <span className="flex items-center gap-1 text-foreground text-sm">
+            {indicator}
+          </span>
+
+          <Button
+            className="p-1"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+            size="xs"
+            variant="secondary"
+          >
+            <ChevronRight size={16} />
+          </Button>
+
+          <Button
+            className="p-1"
+            onClick={() => table.lastPage()}
+            disabled={!table.getCanNextPage()}
+            size="xs"
+            variant="secondary"
+          >
+            <ChevronsRight size={16} />
+          </Button>
+        </div>
+
+        <div className="justify-end flex gap-4 items-center text-foreground-lighter text-sm">
+          <div className="flex gap-1 items-center text-foreground-lighter text-sm">
+            <div className="inline-flex whitespace-nowrap items-center border border-card rounded-sm p-1 bg-card gap-1">
+              {getLocalePhrase(language, Phrase.Arrows)}
+              <ArrowDownUp size={16} />
+            </div>
+            <div className="text-foreground">
+              {getLocalePhrase(language, Phrase.Navigate)}
+            </div>
+          </div>
+          <div className="flex gap-1 items-center text-foreground-lighter text-sm">
+            <div className="inline-flex whitespace-nowrap items-center border border-card rounded-sm p-1 bg-card">
+              Ctrl + A
+            </div>
+            <div className="text-foreground">
+              {getLocalePhrase(language, Phrase.SelectAll)}
+            </div>
+          </div>
+        </div>
       </div>
     );
   };

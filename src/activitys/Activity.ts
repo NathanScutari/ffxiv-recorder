@@ -28,8 +28,6 @@ export default abstract class Activity {
 
   protected _overrun: number = 0;
 
-  protected hash = crypto.createHash('md5');
-
   protected cfg = ConfigService.getInstance();
 
   protected _youFound: boolean;
@@ -222,6 +220,7 @@ export default abstract class Activity {
 
     const uniqueString = deterministicFields.join(' ') + sortedNames.join(' ');
 
-    return this.hash.update(uniqueString).digest('hex');
+    // Hash instances are one-shot after digest(), so keep this call stateless.
+    return crypto.createHash('md5').update(uniqueString).digest('hex');
   }
 }

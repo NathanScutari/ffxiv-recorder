@@ -1,5 +1,5 @@
 import { ConfigurationSchema } from 'config/configSchema';
-import { AudioSource } from 'main/types';
+import { AudioSource, CharacterFilter } from 'main/types';
 import * as React from 'react';
 
 export const getConfigValue = <T>(configKey: string): T => {
@@ -109,6 +109,8 @@ export const getSettings = (): ConfigurationSchema => {
     chatUserNameAgreed: getConfigValue<string>('chatUserNameAgreed'),
     zoneName: getConfigValue<string>('zoneName'),
     playerName: getConfigValue<string>('playerName'),
+    validateNtfs: getConfigValue<boolean>('validateNtfs'),
+    characterUploadFilters: getConfigValue<CharacterFilter[]>('characterUploadFilters'),
     /* eslint-enable prettier/prettier */
   };
 

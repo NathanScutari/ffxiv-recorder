@@ -1,6 +1,11 @@
 import ElectronStore from 'electron-store';
 import { Channels } from 'main/preload';
-import { AudioSourceType, RendererVideo, SceneItem } from 'main/types';
+import {
+  AudioSourceType,
+  KillVideoSegment,
+  RendererVideo,
+  SceneItem,
+} from 'main/types';
 import { ObsProperty, SceneItemPosition, SourceDimensions } from 'noobs';
 import { TChatMessageWithId } from 'types/api';
 
@@ -77,6 +82,22 @@ declare global {
         getChatMessages(correlator: string): Promise<TChatMessageWithId[]>;
         postChatMessage(correlator: string, message: string): void;
         deleteChatMessage(id: number): void;
+        toggleManualRecording(): void;
+        forceStopRecording(): void;
+
+        createKillVideo(
+          width: number,
+          height: number,
+          fps: number,
+          sources: KillVideoSegment[],
+          audioTrackIndex: number,
+        ): void;
+
+        clipVideo(video: RendererVideo, offset: number, duration: number): void;
+        getHardwareAcceleration(): boolean;
+        createDiagsBundle(): Promise<string>;
+        openSystemExplorer(path: string): void;
+        setOpenInstantReplayFile(path: string | null): void;
       };
     };
   }

@@ -62,6 +62,8 @@ const DeleteDialog = ({
     }),
   ]);
 
+  const inScopeLocked = inScope.filter((video) => video.isProtected);
+
   const [rowSelection, setRowSelection] = useState({});
 
   // Initialize all the rows to be selected by default.
@@ -157,7 +159,17 @@ const DeleteDialog = ({
       Phrase.From,
     )} ${Math.max(selectedRowCount, 1)} ${getLocalePhrase(language, Phrase.Rows)}.`;
 
-    return <div className="text-sm">{warning}</div>;
+    return (
+      <div className="text-sm">
+        <p className="inline ">{warning}</p>
+
+        {inScopeLocked.length > 0 && (
+          <span className="text-destructive ml-1">
+            {getLocalePhrase(language, Phrase.DeleteSelectionContainsLocked)}
+          </span>
+        )}
+      </div>
+    );
   };
 
   const doDelete = () => {
@@ -165,7 +177,11 @@ const DeleteDialog = ({
       .getSelectedRowModel()
       .rows.map((row) => row.original);
 
-    window.electron.ipcRenderer.sendMessage('deleteVideos', toDelete);
+    const toDeleteDisk = toDelete.filter((rv) => !rv.cloud);
+    const toDeleteCloud = toDelete.filter((rv) => rv.cloud);
+
+    window.electron.ipcRenderer.sendMessage('deleteVideosDisk', toDeleteDisk);
+    window.electron.ipcRenderer.sendMessage('deleteVideosCloud', toDeleteCloud);
 
     setVideoState((prev) => {
       return [...prev].filter((rv) => {

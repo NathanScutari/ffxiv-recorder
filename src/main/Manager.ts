@@ -1,12 +1,19 @@
+import fs, { FSWatcher } from 'fs';
 import { app, ipcMain, powerMonitor } from 'electron';
 import { uIOhook, UiohookKeyboardEvent } from 'uiohook-napi';
 import {
   buildClipMetadata,
-  getMetadataForVideo,
+  checkAdvancedCombatLogging,
+  getConfigWtfPath,
   getOBSFormattedDate,
   isManualRecordHotKey,
   nextKeyPressPromise,
   nextMousePressPromise,
+  pushActivityStatus,
+  resetInstantReplayState,
+  refreshInstantReplayState,
+  rendererVideoToMetadata,
+  resetActivityStatus,
 } from './util';
 import { VideoCategory } from '../types/VideoCategory';
 import Poller from '../utils/Poller';
@@ -20,6 +27,10 @@ import {
   MicStatus,
   WowProcessEvent,
   BaseConfig,
+  AdvancedLoggingStatus,
+  KillVideoQueueItem,
+  RendererVideo,
+  KillVideoSegment,
 } from './types';
 import {
   getObsVideoConfig,
@@ -89,6 +100,23 @@ export default class Manager {
   private manualHotKeyDisabled = false;
 
   /**
+   * File watchers for Config.wtf files, used to detect changes to
+   * the advanced combat logging setting.
+   */
+  private configWtfWatchers: FSWatcher[] = [];
+
+  /**
+   * Cached advanced logging status per flavour, pushed to the frontend.
+   */
+  private advancedLoggingStatus: AdvancedLoggingStatus = {
+    retail: true,
+    classic: true,
+    era: true,
+    retailPtr: true,
+    classicPtr: true,
+  };
+
+  /**
    * Constructor.
    */
   constructor() {
@@ -130,6 +158,8 @@ export default class Manager {
     if (success) {
       this.setConfigValid();
       this.poller.start();
+      await this.watchConfigWtfFiles();
+      await this.checkAdvancedLogging();
     }
 
     this.reconfiguring = false;
@@ -172,6 +202,9 @@ export default class Manager {
     // ...and for the disk client too.
     await DiskClient.getInstance().refreshStatus();
     await DiskClient.getInstance().refreshVideos();
+
+    await this.watchConfigWtfFiles();
+    await this.checkAdvancedLogging();
   }
 
   /**
@@ -249,11 +282,10 @@ export default class Manager {
     }
 
     const inOverrun = LogHandler.overrunning;
-    const inActivity = Boolean(LogHandler.activity);
 
     if (inOverrun) {
       this.refreshRecStatus(RecStatus.Overrunning);
-    } else if (inActivity) {
+    } else if (LogHandler.activity) {
       this.refreshRecStatus(RecStatus.Recording);
     } else if (this.recorder.obsState === ERecordingState.Recording) {
       this.refreshRecStatus(RecStatus.ReadyToRecord);
@@ -263,6 +295,46 @@ export default class Manager {
 
     this.refreshMicStatus(this.recorder.obsMicState);
     this.redrawPreview();
+
+    if (LogHandler.activity) {
+      refreshInstantReplayState(LogHandler.activity);
+    } else if (!inOverrun) {
+      resetInstantReplayState();
+    }
+  }
+
+  /**
+   * Check advanced logging - not applicable for FFXIV.
+   */
+  public async checkAdvancedLogging() {
+    // FFXIV does not use advanced combat logging (WoW-specific feature).
+    this.pushAdvancedLoggingStatus();
+  }
+
+  /**
+   * Push the cached advanced logging status to the frontend.
+   */
+  public pushAdvancedLoggingStatus() {
+    send('updateAdvancedLoggingStatus', this.advancedLoggingStatus);
+  }
+
+  /**
+   * Watch Config.wtf files for changes so the advanced logging status
+   * updates reactively when the user toggles the setting in WoW.
+   */
+  private watchConfigWtfFiles() {
+    console.info('Close any existing Config.wtf file watchers');
+    this.configWtfWatchers.forEach((w) => w.close());
+    this.configWtfWatchers = [];
+
+    const logPaths = new Set<string>();
+
+    if (this.cfg.get<boolean>('recordFFXIV'))
+      logPaths.add(this.cfg.get<string>('xivLogPath'));
+
+    console.info('Start watching log paths for', [...logPaths]);
+
+    // FFXIV does not use Config.wtf files (WoW-specific feature).
   }
 
   /**
@@ -270,6 +342,12 @@ export default class Manager {
    */
   private refreshRecStatus(status: RecStatus, msg = '') {
     send('updateRecStatus', status, msg);
+
+    if (LogHandler.activity && status === RecStatus.Recording) {
+      pushActivityStatus(LogHandler.activity);
+    } else {
+      resetActivityStatus();
+    }
   }
 
   /**
@@ -362,7 +440,7 @@ export default class Manager {
       this.retailPtrLogHandler = undefined;
       this.ffxivLogHandler = undefined;
     }
-    
+
     if (config.recordFFXIV) {
       this.ffxivLogHandler = new FFXIVLogHandler(config.xivLogPath, this.cfg);
     }
@@ -425,34 +503,95 @@ export default class Manager {
     });
 
     // Clipping listener.
-    ipcMain.on('clip', async (_event, args) => {
-      console.info('[Manager] Clip request received with args', args);
+    ipcMain.on(
+      'clip',
+      async (
+        _event,
+        video: RendererVideo,
+        offset: number,
+        duration: number,
+      ) => {
+        console.info(
+          '[Manager] Clip request received with args',
+          video.videoSource,
+          offset,
+          duration,
+        );
 
-      const source = args[0];
-      const offset = args[1];
-      const duration = args[2];
+        const sourceMetadata = rendererVideoToMetadata({ ...video });
+        const now = new Date();
 
-      const sourceMetadata = await getMetadataForVideo(source);
-      const now = new Date();
-      const clipMetadata = buildClipMetadata(sourceMetadata, duration, now);
+        const clipMetadata = buildClipMetadata(
+          sourceMetadata,
+          duration,
+          now,
+          offset,
+          video.videoName,
+        );
 
-      const clipQueueItem: VideoQueueItem = {
-        source,
-        suffix: `Clipped at ${getOBSFormattedDate(now)}`,
-        offset,
-        duration,
-        clip: true,
-        metadata: clipMetadata,
-      };
+        const clipQueueItem: VideoQueueItem = {
+          name: video.videoName,
+          source: video.videoSource,
+          suffix: `Clipped at ${getOBSFormattedDate(now)}`,
+          offset,
+          duration,
+          clip: true,
+          metadata: clipMetadata,
+        };
 
-      VideoProcessQueue.getInstance().queueVideo(clipQueueItem);
-    });
+        VideoProcessQueue.getInstance().queueVideo(clipQueueItem);
+      },
+    );
 
-    // Force stop listener, to enable the force stop button to do its job.
-    ipcMain.on('recorder', async (_event, args) => {
-      if (args[0] === 'stop') {
-        console.info('[Manager] Force stopping recording due to user request.');
-        this.forceStop();
+    ipcMain.on(
+      'createKillVideo',
+      async (
+        _event,
+        width: number,
+        height: number,
+        fps: number,
+        segments: KillVideoSegment[],
+        audioTrackIndex: number,
+      ) => {
+        console.info(
+          '[Manager] Creating kill video with settings:',
+          `${width}x${height} at ${fps} fps`,
+        );
+
+        if (segments.length < 2) {
+          console.warn('[Manager] Too few videos for kill video');
+          return;
+        }
+
+        console.info(
+          '[Manager] Have segments for kill video',
+          segments.map((seg) => ({
+            videoName: seg.video.videoName,
+            videoSource: seg.video.videoSource,
+            cloud: seg.video.cloud,
+            start: seg.start,
+            stop: seg.stop,
+          })),
+        );
+
+        const item: KillVideoQueueItem = {
+          uuid: crypto.randomUUID(),
+          width,
+          height,
+          fps,
+          segments,
+          audioTrackIndex,
+        };
+
+        VideoProcessQueue.getInstance().queueCreateKillVideo(item);
+      },
+    );
+
+    // Listens for a manual recording being started via the button. The
+    // hotkey listener is handled separately.
+    ipcMain.on('toggleManualRecording', async () => {
+      if (!this.cfg.get('manualRecord')) {
+        // Manual recording is not enabled.
         return;
       }
 
@@ -461,6 +600,25 @@ export default class Manager {
       if (isXivRunning) {
         this.onXIVStarted();
       }
+
+      if (this.recorder.obsState !== ERecordingState.Recording) {
+        console.warn('[Manager] Recorder not ready when manual hotkey pressed');
+        return;
+      }
+
+      LogHandler.handleManualRecordingHotKey();
+    });
+
+    // Handles a click of the force stop button.
+    ipcMain.on('forceStopRecording', async () => {
+      LogHandler.forceEndActivity();
+    });
+
+    // Test listener, to enable the test button to start a test.
+    ipcMain.on('test', (_event, args) => {
+      const testCategory = args[0] as VideoCategory;
+      const endTest = Boolean(args[1]);
+      this.test(testCategory, endTest);
     });
 
     /**

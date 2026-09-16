@@ -11,6 +11,10 @@ import {
   CloudStatus,
   DiskStatus,
   StorageFilter,
+  ActivityStatus,
+  AdvancedLoggingStatus,
+  InstantReplayState,
+  InstantReplayData,
 } from 'main/types';
 import Box from '@mui/material/Box';
 import { getLocalePhrase, Language } from 'localisation/translations';
@@ -35,6 +39,7 @@ import { Phrase } from 'localisation/phrases';
 import _ from 'lodash';
 import { playAudio } from './sounds';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import KillVideoProgress from './KillVideoProgress';
 
 const ipc = window.electron.ipcRenderer;
 const queryClient = new QueryClient();
@@ -46,9 +51,22 @@ const WarcraftRecorder = () => {
   const [errorReports, setErrorReports] = useState<ErrorReport[]>([]);
   const updateNotified = useRef(false);
   const { toast } = useToast();
+  const [advancedLoggingStatus, setAdvancedLoggingStatus] =
+    useState<AdvancedLoggingStatus>({
+      retail: true,
+      classic: true,
+      era: true,
+      retailPtr: true,
+      classicPtr: true,
+    });
+  const [previewEnabled, setPreviewEnabled] = useState(true);
 
   const [recorderStatus, setRecorderStatus] = useState<RecStatus>(
     RecStatus.WaitingForWoW,
+  );
+
+  const [activityStatus, setActivityStatus] = useState<ActivityStatus | null>(
+    null,
   );
 
   const [savingStatus, setSavingStatus] = useState<SaveStatus>(
@@ -98,6 +116,7 @@ const WarcraftRecorder = () => {
       del: false,
       usage: 0,
       limit: 0,
+      migrated: false,
     },
 
     // The disk storage status.
@@ -114,6 +133,13 @@ const WarcraftRecorder = () => {
 
   // The video state contains most of the frontend state.
   const [videoState, setVideoState] = useState<RendererVideo[]>([]);
+
+  // Fragmented MP4 path.
+  const [instantReplayState, setInstantReplayState] =
+    useState<InstantReplayState>({
+      current: null,
+      open: null,
+    });
 
   // The counters for display on the side menu. It's convient to keep these
   // seperate to the video state so we can apply filtering without changing the
@@ -157,6 +183,10 @@ const WarcraftRecorder = () => {
     if (status === RecStatus.InvalidConfig || status === RecStatus.FatalError) {
       setError(err as string);
     }
+  };
+
+  const updateActivityStatus = (status: unknown) => {
+    setActivityStatus(status as ActivityStatus);
   };
 
   const updateSaveStatus = (status: unknown) => {
@@ -240,6 +270,10 @@ const WarcraftRecorder = () => {
 
     // Don't show this prompt again.
     updateNotified.current = true;
+  };
+
+  const updateAdvancedLogging = (status: unknown) => {
+    setAdvancedLoggingStatus(status as AdvancedLoggingStatus);
   };
 
   const setCloudVideos = (videos: unknown) => {
@@ -396,8 +430,25 @@ const WarcraftRecorder = () => {
     });
   };
 
+  const updateInstantReplayState = (value: unknown) => {
+    setInstantReplayState((prev) => {
+      const incoming = value as InstantReplayData | null;
+
+      if (!incoming) {
+        return { ...prev, current: null };
+      }
+
+      if (prev.open && incoming.path === prev.open.path) {
+        return { open: incoming, current: incoming };
+      }
+
+      return { ...prev, current: incoming };
+    });
+  };
+
   useEffect(() => {
     ipc.on('updateRecStatus', updateRecStatus);
+    ipc.on('updateActivityStatus', updateActivityStatus);
     ipc.on('updateSaveStatus', updateSaveStatus);
     ipc.on('updateMicStatus', updateMicStatus);
     ipc.on('updateErrorReport', updateErrorReports);
@@ -412,9 +463,12 @@ const WarcraftRecorder = () => {
     ipc.on('displayProtectCloudVideos', displayProtectCloudVideos);
     ipc.on('displayUnprotectCloudVideos', displayUnprotectCloudVideos);
     ipc.on('displayTagCloudVideo', displayTagCloudVideo);
+    ipc.on('updateAdvancedLoggingStatus', updateAdvancedLogging);
+    ipc.on('updateInstantReplayState', updateInstantReplayState);
 
     return () => {
       ipc.removeAllListeners('updateRecStatus');
+      ipc.removeAllListeners('updateActivityStatus');
       ipc.removeAllListeners('updateSaveStatus');
       ipc.removeAllListeners('updateMicStatus');
       ipc.removeAllListeners('updateErrorReport');
@@ -429,6 +483,8 @@ const WarcraftRecorder = () => {
       ipc.removeAllListeners('displayProtectCloudVideos');
       ipc.removeAllListeners('displayUnprotectCloudVideos');
       ipc.removeAllListeners('displayTagCloudVideo');
+      ipc.removeAllListeners('updateAdvancedLoggingStatus');
+      ipc.removeAllListeners('updateInstantReplayState');
     };
   }, []);
 
@@ -444,6 +500,7 @@ const WarcraftRecorder = () => {
         }}
       >
         <Toaster />
+        <KillVideoProgress language={appState.language} />
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
             <RendererTitleBar />
@@ -460,6 +517,12 @@ const WarcraftRecorder = () => {
                 savingStatus={savingStatus}
                 config={config}
                 updateAvailable={updateAvailable}
+                recorderCategory={activityStatus?.category}
+                activityStatus={activityStatus}
+                advancedLoggingStatus={advancedLoggingStatus}
+                setPreviewEnabled={setPreviewEnabled}
+                instantReplayState={instantReplayState}
+                setInstantReplayState={setInstantReplayState}
               />
               <Layout
                 recorderStatus={recorderStatus}
@@ -471,6 +534,11 @@ const WarcraftRecorder = () => {
                 playerHeight={playerHeight}
                 config={config}
                 setConfig={setConfig}
+                advancedLoggingStatus={advancedLoggingStatus}
+                previewEnabled={previewEnabled}
+                setPreviewEnabled={setPreviewEnabled}
+                instantReplayState={instantReplayState}
+                setInstantReplayState={setInstantReplayState}
               />
             </div>
           </TooltipProvider>

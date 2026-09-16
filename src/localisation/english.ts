@@ -508,7 +508,18 @@ const ENGLISH: Translations = {
   [Phrase.ClassicPtr]: '',
   [Phrase.Era]: '',
   [Phrase.RetailPtrLogPathDescription]: '',
-  [Phrase.RecordRetailPtrDescription]: ''
+  [Phrase.RecordRetailPtrDescription]: '',
+  [Phrase.ValidateNtfsLabel]: 'Validate NTFS',
+  [Phrase.ValidateNtfsDescription]: 'Validate that the log directory is on an NTFS drive. Combat log updates can be unreliable on other filesystems.',
+  [Phrase.RecordedAt]: 'Recorded At',
+  [Phrase.EncodedWith]: 'Encoded With',
+  [Phrase.CharacterFilterAdd]: 'Add Character',
+  [Phrase.CharacterFilterActive]: 'Character filter active. Only videos containing the specified characters will be displayed.',
+  [Phrase.CharacterFilterSelectFromRecent]: 'Select from recent',
+  [Phrase.CharacterFilterAddManual]: 'Add Manually',
+  [Phrase.ClipSourceTooltip]: 'Go to source',
+  [Phrase.ClipSourceUnavailableTooltip]: 'Source unavailable',
+  [Phrase.DeleteSelectionContainsLocked]: 'This selection contains locked recordings which will also be permanently deleted.',
 };
 
 export default ENGLISH;

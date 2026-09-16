@@ -24,6 +24,9 @@ import {
   ObsAudioConfig,
   ErrorReport,
   CloudSignedMetadata,
+  KillVideoSegment,
+  ActivityStatus,
+  InstantReplayData,
 } from './types';
 import { VideoCategory } from '../types/VideoCategory';
 import ConfigService from 'config/ConfigService';
@@ -32,7 +35,17 @@ import { send } from './main';
 import { Readable } from 'stream';
 import { ESupportedEncoders } from './obsEnums';
 import Recorder from './Recorder';
-import { wowInstallSearchPaths } from './constants';
+import { exec, execFile } from 'child_process';
+import { specializationById, wowInstallSearchPaths } from './constants';
+import {
+  getPlayerName,
+  getPlayerSpecID,
+  secToMmSs,
+} from 'renderer/rendererutils';
+import { ZipArchive } from 'archiver';
+import ChallengeModeDungeon from 'activitys/ChallengeModeDungeon';
+import Activity from 'activitys/Activity';
+import SoloShuffle from 'activitys/SoloShuffle';
 
 /**
  * When packaged, we need to fix some paths
@@ -58,8 +71,6 @@ const setupApplicationLogging = () => {
   Object.assign(console, log.functions);
   return path.dirname(logPath);
 };
-
-const { exec } = require('child_process');
 
 const getResolvedHtmlPath = () => {
   if (process.env.NODE_ENV === 'development') {
@@ -289,12 +300,12 @@ const loadVideoDetailsDisk = async (
  * Writes video metadata asynchronously and returns a Promise
  */
 const writeMetadataFile = async (videoPath: string, metadata: Metadata) => {
-  console.info('[Util] Write Metadata file', videoPath);
+  console.info('[Util] Write Metadata file for video:', videoPath);
 
   const metadataFileName = getMetadataFileNameForVideo(videoPath);
   const jsonString = JSON.stringify(metadata, null, 2);
 
-  fspromise.writeFile(metadataFileName, jsonString, {
+  await fspromise.writeFile(metadataFileName, jsonString, {
     encoding: 'utf-8',
   });
 };
@@ -410,6 +421,34 @@ const getWowFlavour = (pathSpec: string): string => {
   const content = fs.readFileSync(flavourInfoFile).toString().split('\n');
 
   return content.length > 1 ? content[1] : 'unknown';
+};
+
+/**
+ * Check if advanced combat logging is enabled in the Config.wtf file for the given log path.
+ */
+const getConfigWtfPath = (logPath: string): string => {
+  return path.normalize(path.join(logPath, '../WTF/Config.wtf'));
+};
+
+const checkAdvancedCombatLogging = async (
+  logPath: string,
+): Promise<boolean> => {
+  const configWtfFile = getConfigWtfPath(logPath);
+
+  if (!(await exists(configWtfFile))) {
+    console.warn('[Util] Config.wtf not found at', configWtfFile);
+    return false;
+  }
+
+  const content = (await fs.promises.readFile(configWtfFile)).toString();
+  const match = content.match(/^SET advancedCombatLogging\s+"(\d+)"/m);
+
+  if (match && match[1] === '1') {
+    return true;
+  }
+
+  console.warn('[Util] Advanced combat logging is disabled', configWtfFile);
+  return false;
 };
 
 /**
@@ -593,13 +632,85 @@ const getPromiseBomb = (fuse: number, reason: string) => {
   });
 };
 
-const buildClipMetadata = (initial: Metadata, duration: number, date: Date) => {
-  const final = initial;
+const buildClipMetadata = (
+  initial: Metadata,
+  duration: number,
+  date: Date,
+  offset: number,
+  parentVideoName: string,
+) => {
+  const final = { ...initial };
   final.duration = duration;
+  // Most clip metadata is copied from the source recording; parent-prefixed
+  // fields are the trusted source navigation data added at clipping time.
   final.parentCategory = initial.category;
+  final.parentVideoName = parentVideoName;
+  final.parentVideoOffset = offset;
   final.category = VideoCategory.Clips;
   final.protected = true;
   final.clippedAt = date.getTime();
+  return final;
+};
+
+const buildKillVideoMetadata = (
+  initial: Metadata,
+  segments: KillVideoSegment[],
+) => {
+  const final = { ...initial };
+  final.duration = segments[segments.length - 1].stop;
+  final.parentCategory = initial.category;
+  final.category = VideoCategory.Clips;
+  final.protected = true;
+  final.clippedAt = Date.now();
+  final.tag = `Multipov Kill Video\n`;
+
+  // Build a tag for the video like this:
+  //
+  //   Multipov Kill Video
+  //   Created by WCR at: 2025-10-29 20-38-50
+  //   A YouTube compatible description timeline is below.
+  //
+  //   00:00 - Imprvedziniq (Destruction)
+  //   01:06 - Visk (Arcane)
+  //   02:12 - Phrixosdk (Frost)
+  //   03:18 - Titzy (Elemental)
+  //   04:24 - Alextides (Restoration)
+  //   05:29 - Catza (Restoration)
+  //   06:35 - Meraned (Beast Mastery)
+  //   07:41 - Rubiscodrage (Devastation)
+
+  if (initial.start) {
+    // All modern videos have this. It is possible legacy videos might not.
+    final.tag += `Created by WCR at: ${getOBSFormattedDate(new Date(initial.start))}\n`;
+  }
+
+  final.tag += `A YouTube compatible description timeline is below.\n`;
+
+  segments.forEach((segment) => {
+    let playerName = getPlayerName(segment.video);
+    const playerSpecID = getPlayerSpecID(segment.video);
+
+    if (!playerName) {
+      // Should basically never happen but guard for it anyway.
+      playerName = 'Unknown';
+    }
+
+    const spec =
+      playerSpecID < 1 ? 'Unknown' : specializationById[playerSpecID].name;
+
+    final.tag += '\n';
+    final.tag += `${secToMmSs(segment.start)} - ${playerName} (${spec})`;
+  });
+
+  final.player = {
+    _GUID: 'WCR MultiPov GUID',
+    _teamID: -1,
+    _specID: -1,
+    _name: 'WCR Multipov Name',
+    _realm: 'WCR Multipov Realm',
+    _region: 'WCR Multipov Region',
+  };
+
   return final;
 };
 
@@ -649,10 +760,63 @@ const checkDisk = async (dir: string, req: number) => {
   const reqBytes = req * 1024 ** 3 - inUseBytes;
 
   if (freeBytes < reqBytes) {
-    const msg = `Disk '${disk}' does not have enough free space, needs ${req}GB.`;
+    const msg = `Disk '${disk}' does not have enough free space, needs ${reqBytes / 1024 ** 3}GB but got ${freeBytes / 1024 ** 3}GB.`;
     console.error(`Disk check failed: ${msg}`);
     throw new Error(msg);
   }
+};
+
+const getWindowsRoot = (targetPath: string) => {
+  return path.win32.parse(path.win32.resolve(targetPath)).root;
+};
+
+const getDriveFormat = async (
+  targetPath: string,
+): Promise<string | undefined> => {
+  if (process.platform !== 'win32') {
+    return undefined;
+  }
+
+  const root = getWindowsRoot(targetPath);
+
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        `[System.IO.DriveInfo]::new("${root}").DriveFormat`,
+      ],
+      { windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          console.warn(
+            '[Util] Failed to get drive format',
+            targetPath,
+            String(error),
+            String(stderr).trim(),
+          );
+
+          resolve(undefined);
+          return;
+        }
+
+        const driveFormat = String(stdout).trim();
+
+        if (!driveFormat) {
+          console.warn('[Util] Empty drive format returned', targetPath);
+          resolve(undefined);
+          return;
+        }
+
+        console.info('[Util] Drive format', driveFormat, 'for', targetPath);
+        resolve(driveFormat);
+      },
+    );
+  });
 };
 
 /**
@@ -913,7 +1077,10 @@ const handleSafeVodRequest = async (request: Request) => {
       });
     }
 
-    const filePath = Buffer.from(requestUrl).toString('utf-8').split('#')[0]; // Remove any timestamps, the frontend handles those.
+    const filePath = Buffer.from(requestUrl)
+      .toString('utf-8')
+      .split('#')[0] // Remove any timestamps, the frontend handles those.
+      .split('?')[0]; // Instant replay uses a param as a cache buster.
 
     if (!filePath.endsWith('.mp4')) {
       console.error('[Util] Not an MP4 file:', filePath);
@@ -1005,51 +1172,97 @@ const runFirstTimeSetupActionsObs = () => {
 const runFirstTimeSetupActionsNoObs = () => {
   const cfg = ConfigService.getInstance();
 
-  const isRetailConfigured =
-    cfg.get<boolean>('recordRetail') && cfg.get<string>('retailLogPath');
-
-  if (!isRetailConfigured) {
-    console.info('[Util] Attempt to first time configure retail installation');
-
-    for (let i = 0; i < wowInstallSearchPaths.length; i++) {
-      const installPath = wowInstallSearchPaths[i] + '\\_retail_\\Logs';
-      const installExists = existsSync(installPath);
-
-      if (installExists) {
-        console.info('[Util] Found retail WoW installation at', installPath);
-        cfg.set('retailLogPath', installPath);
-        cfg.set('recordRetail', true);
-        break;
-      }
-    }
-  }
-
-  const isClassicConfigured =
-    cfg.get<boolean>('recordClassic') && cfg.get<string>('classicLogPath');
-
-  if (!isClassicConfigured) {
-    console.info('[Util] Attempt to first time configure classic installation');
-
-    for (let i = 0; i < wowInstallSearchPaths.length; i++) {
-      const installPath = wowInstallSearchPaths[i] + '\\_classic_\\Logs';
-      const installExists = existsSync(installPath);
-
-      if (installExists) {
-        console.info('[Util] Found classic WoW installation at', installPath);
-        cfg.set('classicLogPath', installPath);
-        cfg.set('recordClassic', true);
-        break;
-      }
-    }
-  }
+  // FFXIV does not have auto-detection of log paths like WoW does.
+  // The user must configure the log path manually.
 
   if (!cfg.get<string>('storagePath')) {
     console.info('[Util] Setting up default storage path');
-    const baseVideoPath = app.getPath('videos');
-    const initialStorageDir = path.join(baseVideoPath, 'Warcraft Recorder');
+    const baseVideoPath = app.getPath('userData');
+
+    const initialStorageDir = path.join(
+      baseVideoPath,
+      'Warcraft Recorder Videos',
+    );
+
     fs.mkdirSync(initialStorageDir, { recursive: true });
     cfg.set('storagePath', initialStorageDir);
   }
+};
+
+const createDiagsBundle = async (logPath: string): Promise<string> => {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  const timestamp =
+    `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${String(now.getFullYear()).slice(-2)}-` +
+    `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+
+  const bundleName = `wcr-diag-bundle-${timestamp}.zip`;
+  const bundlePath = path.join(logPath, bundleName);
+
+  const archive = new ZipArchive({ zlib: { level: 9 } });
+  const output = fs.createWriteStream(bundlePath);
+
+  return new Promise((resolve, reject) => {
+    output.once('close', () => {
+      console.info(
+        `[Util] Created diagnostics bundle: ${bundleName} (${archive.pointer()} bytes)`,
+      );
+      resolve(bundlePath); // <-- return path here
+    });
+
+    archive.once('error', reject);
+    output.once('error', reject);
+
+    archive.pipe(output);
+    archive.glob('**/*', { cwd: logPath, ignore: ['*.zip'] });
+    archive.finalize();
+  });
+};
+
+const resetActivityStatus = () => {
+  send('updateActivityStatus', null);
+};
+
+const pushActivityStatus = (activity: Activity) => {
+  const activityStatus: ActivityStatus = {
+    category: activity.category,
+    start: activity.startDate.getTime(),
+  };
+
+  send('updateActivityStatus', activityStatus);
+};
+
+const resetInstantReplayState = () => {
+  send('updateInstantReplayState', null);
+};
+
+const refreshInstantReplayState = (activity: Activity) => {
+  const recorder = Recorder.getInstance();
+  const instantReplayFile = recorder.instantReplayFile;
+
+  if (!instantReplayFile) {
+    resetInstantReplayState();
+    return;
+  }
+
+  const category = activity.category;
+
+  const current: InstantReplayData = {
+    path: instantReplayFile,
+    deaths: activity.deaths,
+    category,
+  };
+
+  if (category === VideoCategory.MythicPlus) {
+    const cm = activity as ChallengeModeDungeon;
+    current.challengeModeTimeline = cm.timeline.map((s) => s.getRaw());
+  } else if (category === VideoCategory.SoloShuffle) {
+    const ss = activity as SoloShuffle;
+    current.soloShuffleTimeline = ss.getTimelineSegments();
+  }
+
+  send('updateInstantReplayState', current);
 };
 
 export {
@@ -1073,6 +1286,7 @@ export {
   getPromiseBomb,
   emitErrorReport,
   buildClipMetadata,
+  buildKillVideoMetadata,
   getOBSFormattedDate,
   checkDisk,
   getMetadataFileNameForVideo,
@@ -1093,4 +1307,12 @@ export {
   handleSafeVodRequest,
   runFirstTimeSetupActionsObs,
   runFirstTimeSetupActionsNoObs,
+  checkAdvancedCombatLogging,
+  getConfigWtfPath,
+  getDriveFormat,
+  createDiagsBundle,
+  resetActivityStatus,
+  pushActivityStatus,
+  resetInstantReplayState,
+  refreshInstantReplayState,
 };

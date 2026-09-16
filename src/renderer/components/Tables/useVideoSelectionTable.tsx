@@ -6,8 +6,8 @@ import {
   PaginationState,
   useReactTable,
 } from '@tanstack/react-table';
-import { RendererVideo, AppState } from 'main/types';
-import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
+import { RendererVideo, AppState, RendererClip } from 'main/types';
+import { Dispatch, SetStateAction, useMemo, useState } from 'react';
 import {
   getPullNumber,
   getInstanceDifficultyText,
@@ -26,6 +26,8 @@ import {
   populateLevelCell,
   populateActivityCell,
   populateAffixesCell,
+  populateCreatorCell,
+  populateSourceCell,
 } from './Cells';
 import {
   EncounterHeader,
@@ -41,6 +43,7 @@ import {
   ActivityHeader,
   DetailsHeader,
   AffixesHeader,
+  ClippedAtHeader,
 } from './Headers';
 import {
   resultSort,
@@ -49,42 +52,70 @@ import {
   levelSort,
   detailSort,
   clipActivitySort,
+  creatorSort,
 } from './Sorting';
 import { getLocaleCategoryLabel } from 'localisation/translations';
 
-const useTable = (
+const useVideoSelectionTable = (
   videoState: RendererVideo[],
   appState: AppState,
   setVideoState: Dispatch<SetStateAction<RendererVideo[]>>,
+  getClipParent: (clip: RendererClip) => RendererVideo | undefined,
+  goToClipParent: (clip: RendererClip) => void,
 ) => {
-  const {
-    category,
-    language,
-    videoFilterTags,
-    dateRangeFilter,
-    storageFilter,
-    cloudStatus,
-  } = appState;
+  const { category, language, cloudStatus, selectedVideos } = appState;
+
+  const getInitialRowSelection = () => {
+    const videoToParentId = new Map<string, string>();
+
+    videoState.forEach((video) => {
+      videoToParentId.set(video.uniqueId, video.uniqueId);
+
+      video.multiPov.forEach((child) => {
+        videoToParentId.set(child.uniqueId, video.uniqueId);
+      });
+    });
+
+    const selection = Object.fromEntries(
+      selectedVideos
+        .map((video) => videoToParentId.get(video.uniqueId))
+        .filter((id): id is string => id !== undefined)
+        .map((id) => [id, true]),
+    );
+
+    if (Object.keys(selection).length > 0) {
+      return selection;
+    }
+
+    if (videoState.length > 0) {
+      return { [videoState[0].uniqueId]: true };
+    }
+
+    return {};
+  };
 
   /**
-   * Tracks if rows are selected or not.
+   * Tracks if rows are selected or not in the ReactTable component. Initialize
+   * this here with any selected videos, which is important when seeking here
+   * programatically (i.e. using the seek to clip source function).
+   *
+   * Historically there has been some tech debt here where it was a valid
+   * state for the table to have no selection. This resulted in lots of
+   * handling where no rows are selected within the table components. I believe
+   * that is no longer possible with the addition of this initialization.
    */
-  const [rowSelection, setRowSelection] = useState({});
+  const [rowSelection, setRowSelection] = useState(getInitialRowSelection);
 
   /**
-   * Controls the table pagnation.
+   * Controls the table pagination.
    */
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 100,
   });
 
-  /**
-   * Deselect all rows on category change or filter change.
-   */
-  useEffect(() => {
-    setRowSelection({});
-  }, [category, videoFilterTags, dateRangeFilter, storageFilter]);
+  // Tanstack table relies on stable references, so while we have the React
+  // compiler enabled we still need useMemo here or weird stuff will happen.
 
   /**
    * The raid table columns, the data access, sorting functions
@@ -117,6 +148,7 @@ const useTable = (
       },
       {
         id: 'Pull',
+        size: 100,
         accessorFn: (v) => getPullNumber(v, videoState),
         header: () => PullHeader(language),
       },
@@ -140,10 +172,19 @@ const useTable = (
       },
       {
         id: 'Viewpoints',
+        size: 180,
         accessorFn: (v) => v,
         header: () => ViewpointsHeader(language),
         cell: (v) => populateViewpointCell(v),
         sortingFn: viewPointCountSort,
+      },
+      {
+        id: 'Creator',
+        size: 50,
+        accessorFn: (v) => v,
+        sortingFn: (a, b) => creatorSort(a, b),
+        header: DetailsHeader,
+        cell: (ctx) => populateCreatorCell(ctx, language),
       },
     ],
     [language, cloudStatus, videoState, setVideoState],
@@ -193,6 +234,7 @@ const useTable = (
       },
       {
         id: 'Viewpoints',
+        size: 180,
         accessorFn: (v) => v,
         header: () => ViewpointsHeader(language),
         cell: (v) => populateViewpointCell(v),
@@ -260,13 +302,14 @@ const useTable = (
       },
       {
         id: 'Viewpoints',
+        size: 180,
         accessorFn: (v) => v,
         header: () => ViewpointsHeader(language),
         cell: (v) => populateViewpointCell(v),
         sortingFn: viewPointCountSort,
       },
     ],
-    [appState, setVideoState],
+    [cloudStatus, language, setVideoState],
   );
 
   /**
@@ -313,13 +356,14 @@ const useTable = (
       },
       {
         id: 'Viewpoints',
+        size: 180,
         accessorFn: (v) => v,
         header: () => ViewpointsHeader(language),
         cell: (v) => populateViewpointCell(v),
         sortingFn: viewPointCountSort,
       },
     ],
-    [appState, setVideoState],
+    [cloudStatus, language, setVideoState],
   );
 
   /**
@@ -363,18 +407,28 @@ const useTable = (
       {
         id: 'Date',
         accessorFn: (v) => videoToDate(v),
-        header: () => DateHeader(language),
+        header: () => ClippedAtHeader(language),
         cell: populateDateCell,
       },
       {
         id: 'Viewpoints',
+        size: 180,
         accessorFn: (v) => v,
         header: () => ViewpointsHeader(language),
         cell: (v) => populateViewpointCell(v),
         sortingFn: viewPointCountSort,
       },
+      {
+        id: 'Source',
+        size: 50,
+        accessorFn: (v) => v,
+        enableSorting: false,
+        header: DetailsHeader,
+        cell: (ctx) =>
+          populateSourceCell(ctx, language, getClipParent, goToClipParent),
+      },
     ],
-    [appState, setVideoState],
+    [cloudStatus, getClipParent, goToClipParent, language, setVideoState],
   );
 
   const manualColumns = useMemo<ColumnDef<RendererVideo>[]>(
@@ -408,7 +462,7 @@ const useTable = (
         cell: populateDateCell,
       },
     ],
-    [appState, setVideoState],
+    [language, cloudStatus, setVideoState],
   );
 
   let columns;
@@ -464,4 +518,4 @@ const useTable = (
   return table;
 };
 
-export default useTable;
+export default useVideoSelectionTable;

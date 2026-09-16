@@ -1,5 +1,5 @@
 import { CellContext } from '@tanstack/react-table';
-import { CloudStatus, RendererVideo } from 'main/types';
+import { CloudStatus, RendererClip, RendererVideo } from 'main/types';
 import {
   getVideoResultText,
   getResultColor,
@@ -23,14 +23,20 @@ import { Button } from '../Button/Button';
 import { Tooltip } from '../Tooltip/Tooltip';
 import { getLocalePhrase } from 'localisation/translations';
 import {
+  Clapperboard,
   LockKeyhole,
   LockOpen,
   MessageSquare,
   MessageSquareMore,
+  ExternalLink,
 } from 'lucide-react';
 import { Dispatch, SetStateAction } from 'react';
 import { dungeonAffixesById } from 'main/constants';
 import TagDialog from 'renderer/TagDialog';
+import KillVideoDialog from 'renderer/KillVideoDialog';
+import wcrIcon from '../../../../assets/icon/small-icon.png';
+
+const ipc = window.electron.ipcRenderer;
 
 export const populateResultCell = (
   info: CellContext<RendererVideo, unknown>,
@@ -127,12 +133,11 @@ export const populateDetailsCell = (
 
     const toggleProtected = (e: React.MouseEvent<HTMLButtonElement>) => {
       stopPropagation(e);
+      const toProtectDisk = toProtect.filter((v) => !v.cloud);
+      const toProtectCloud = toProtect.filter((v) => v.cloud);
 
-      window.electron.ipcRenderer.sendMessage('videoButton', [
-        'protect',
-        lock,
-        toProtect,
-      ]);
+      ipc.sendMessage('videoButtonDisk', ['protect', lock, toProtectDisk]);
+      ipc.sendMessage('videoButtonCloud', ['protect', lock, toProtectCloud]);
 
       setVideoState((prev) => {
         const state = [...prev];
@@ -194,9 +199,9 @@ export const populateDetailsCell = (
 
     return (
       <Tooltip content={tooltip}>
-        <div onClick={(e) => e.stopPropagation()}>
+        <div>
           <TagDialog
-            initialTag={tag}
+            tag={tag}
             videos={toTag}
             setVideoState={setVideoState}
             language={language}
@@ -214,6 +219,79 @@ export const populateDetailsCell = (
     <Box className="inline-flex">
       {renderProtectedIcon()}
       {renderTagIcon()}
+    </Box>
+  );
+};
+
+export const populateSourceCell = (
+  ctx: CellContext<RendererVideo, unknown>,
+  language: Language,
+  getClipParent: (clip: RendererClip) => RendererVideo | undefined,
+  goToClipParent: (clip: RendererClip) => void,
+) => {
+  const clip = ctx.getValue() as RendererClip;
+  const parent = getClipParent(clip);
+  const disabled = parent === undefined;
+
+  const tooltip = disabled
+    ? getLocalePhrase(language, Phrase.ClipSourceUnavailableTooltip)
+    : getLocalePhrase(language, Phrase.ClipSourceTooltip);
+
+  const goToSource = (e: React.MouseEvent<HTMLButtonElement>) => {
+    stopPropagation(e);
+    goToClipParent(clip);
+  };
+
+  return (
+    <Box className="inline-flex">
+      <Tooltip content={tooltip}>
+        <div>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={goToSource}
+            disabled={disabled}
+          >
+            <ExternalLink size={18} />
+          </Button>
+        </div>
+      </Tooltip>
+    </Box>
+  );
+};
+
+export const populateCreatorCell = (
+  ctx: CellContext<RendererVideo, unknown>,
+  language: Language,
+) => {
+  const video = ctx.getValue() as RendererVideo;
+  const cloud = [video, ...video.multiPov].filter((rv) => rv.cloud);
+  const disk = [video, ...video.multiPov].filter((rv) => !rv.cloud);
+  const disabled = disk.length < 2;
+
+  let tooltip = getLocalePhrase(language, Phrase.KillVideoCreatorTooltip);
+
+  if (disabled && cloud.length + disk.length > 1) {
+    tooltip = getLocalePhrase(
+      language,
+      Phrase.KillVideoCreatorTooltipNotEnoughLocal,
+    );
+  } else if (disabled) {
+    tooltip = getLocalePhrase(
+      language,
+      Phrase.KillVideoCreatorTooltipNotEnoughPov,
+    );
+  }
+
+  return (
+    <Box className="inline-flex">
+      <Tooltip content={tooltip}>
+        <KillVideoDialog sources={disk} language={language}>
+          <Button variant="ghost" size="xs" disabled={disabled}>
+            <Clapperboard size={18} />
+          </Button>
+        </KillVideoDialog>
+      </Tooltip>
     </Box>
   );
 };
@@ -263,7 +341,7 @@ export const populateAffixesCell = (
 };
 
 export const populateViewpointCell = (
-  info: CellContext<RendererVideo, unknown>
+  info: CellContext<RendererVideo, unknown>,
 ) => {
   const video = info.getValue() as RendererVideo;
   const count = countUniqueViewpoints(video);
@@ -281,11 +359,17 @@ export const populateViewpointCell = (
     return <div>{count}</div>;
   }
 
-  const playerName = getPlayerName(first);
   const playerClass = getPlayerClass(first);
-  const playerClassColor = getWoWClassColor(playerClass);
   const playerSpecID = getPlayerSpecID(first);
-  const specIcon = specImages[playerSpecID as keyof typeof specImages];
+  let playerName = getPlayerName(first);
+  let playerClassColor = getWoWClassColor(playerClass);
+  let specIcon = specImages[playerSpecID as keyof typeof specImages];
+
+  if (playerName === 'WCR Multipov Name') {
+    playerName = 'Multiview';
+    playerClassColor = '#bb4420';
+    specIcon = wcrIcon;
+  }
 
   const renderSpecAndName = () => {
     return (
@@ -294,6 +378,7 @@ export const populateViewpointCell = (
           key={player._GUID}
           component="img"
           src={specIcon}
+          className="bg-background-higher"
           sx={{
             display: 'flex',
             height: '25px',
@@ -305,7 +390,7 @@ export const populateViewpointCell = (
           }}
         />
         <div
-          className="font-sans font-semibold text-md text-shadow-instance mx-1"
+          className="font-sans font-semibold text-md text-shadow-instance mx-1 truncate"
           style={{ color: playerClassColor }}
         >
           {playerName}

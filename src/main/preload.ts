@@ -1,11 +1,12 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 import { ObsProperty, SceneItemPosition, SourceDimensions } from 'noobs';
 import { AudioSourceType, RendererVideo, SceneItem } from './types';
-import { TChatMessage } from 'types/api';
+import { TChatMessageWithId } from 'types/api';
 
 export type Channels =
   | 'window'
-  | 'videoButton'
+  | 'videoButtonDisk'
+  | 'videoButtonCloud'
   | 'logPath'
   | 'openURL'
   | 'test'
@@ -19,7 +20,8 @@ export type Channels =
   | 'selectFile'
   | 'getNextKeyPress'
   | 'clip'
-  | 'deleteVideos'
+  | 'deleteVideosDisk'
+  | 'deleteVideosCloud'
   | 'writeClipboard'
   | 'getShareableLink'
   | 'doAppUpdate'
@@ -207,7 +209,7 @@ contextBridge.exposeInMainWorld('electron', {
       return ipcRenderer.invoke('getOrCreateChatCorrelator', video);
     },
 
-    getChatMessages(correlator: string): Promise<TChatMessage[]> {
+    getChatMessages(correlator: string): Promise<TChatMessageWithId[]> {
       return ipcRenderer.invoke('getChatMessages', correlator);
     },
 
@@ -217,6 +219,51 @@ contextBridge.exposeInMainWorld('electron', {
 
     deleteChatMessage(id: number) {
       ipcRenderer.send('deleteChatMessage', id);
+    },
+
+    toggleManualRecording() {
+      ipcRenderer.send('toggleManualRecording');
+    },
+
+    forceStopRecording() {
+      ipcRenderer.send('forceStopRecording');
+    },
+
+    createKillVideo(
+      width: number,
+      height: number,
+      fps: number,
+      sources: RendererVideo[],
+      audioTrackIndex: number,
+    ) {
+      ipcRenderer.send(
+        'createKillVideo',
+        width,
+        height,
+        fps,
+        sources,
+        audioTrackIndex,
+      );
+    },
+
+    clipVideo(video: RendererVideo, offset: number, duration: number) {
+      ipcRenderer.send('clip', video, offset, duration);
+    },
+
+    getHardwareAcceleration() {
+      return ipcRenderer.invoke('getHardwareAcceleration');
+    },
+
+    createDiagsBundle(): Promise<string> {
+      return ipcRenderer.invoke('createDiagsBundle');
+    },
+
+    openSystemExplorer(path: string) {
+      ipcRenderer.send('systemExplorer', path);
+    },
+
+    setOpenInstantReplayFile(path: string | null) {
+      ipcRenderer.send('setOpenInstantReplayFile', path);
     },
   },
 });

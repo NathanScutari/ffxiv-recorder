@@ -23,6 +23,7 @@ import {
   handleSafeVodRequest,
   runFirstTimeSetupActionsObs,
   runFirstTimeSetupActionsNoObs,
+  createDiagsBundle,
 } from './util';
 import { OurDisplayType, SoundAlerts, VideoPlayerSettings } from './types';
 import ConfigService from '../config/ConfigService';
@@ -73,11 +74,19 @@ if (firstTimeSetup) {
 
 // It's a common problem that hardware acceleration causes rendering issues.
 // Unclear why this happens and surely not an application bug but we can
-// make it easy for users to disable it if they want to.
-if (!cfg.get<boolean>('hardwareAcceleration')) {
+// make it easy for users to disable it if they want to. This is applied on launch
+// and while the config can be changed the setting is immutable for the remainder
+// of the processes lifetime.
+const hardwareAccelerationAtStartup = cfg.get<boolean>('hardwareAcceleration');
+
+if (!hardwareAccelerationAtStartup) {
   console.info('[Main] Disabling hardware acceleration');
   app.disableHardwareAcceleration();
 }
+
+ipcMain.handle('getHardwareAcceleration', () => {
+  return hardwareAccelerationAtStartup;
+});
 
 // Register the vod:// protocol as privileged. Required to securely play
 // videos from disk.
@@ -123,7 +132,7 @@ const installExtensions = async () => {
       extensions.map((name) => installer[name]),
       forceDownload,
     )
-    .catch(console.log);
+    .catch(console.info);
 };
 
 /**
@@ -190,6 +199,9 @@ const createWindow = async () => {
     },
   });
 
+  // Prevent Windows from opening the native window menu on draggable regions.
+  window.on('system-context-menu', (event) => event.preventDefault());
+
   // We need to do this AFTER creating the window as it's used by the preview.
   Recorder.getInstance().initializeObs();
   await manager.startup();
@@ -202,7 +214,7 @@ const createWindow = async () => {
 
   // This gets hit on a user triggering refresh with CTRL-R.
   window.on('ready-to-show', async () => {
-    console.log('[Main] Ready to show');
+    console.info('[Main] Ready to show');
 
     const status = app.getGPUFeatureStatus();
     const info = await app.getGPUInfo('complete');
@@ -234,6 +246,8 @@ const createWindow = async () => {
       cloud.refreshStatus(),
       cloud.refreshVideos(),
     ]);
+
+    manager.pushAdvancedLoggingStatus();
   });
 
   window.on('focus', () => {
@@ -373,6 +387,21 @@ ipcMain.on('logPath', (_event, args) => {
   if (args[0] === 'open') {
     openSystemExplorer(logDir);
   }
+});
+
+/**
+ * Zips a diags bundle up in the log folder and return the path.
+ */
+ipcMain.handle('createDiagsBundle', async () => {
+  return createDiagsBundle(logDir);
+});
+
+/**
+ * Generic open a file in system explorer listener.
+ */
+ipcMain.on('systemExplorer', (_event, target) => {
+  const targetPath = target as string;
+  openSystemExplorer(targetPath);
 });
 
 /**

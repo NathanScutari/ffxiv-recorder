@@ -505,6 +505,17 @@ enum Phrase {
   SelectOptions,
   SelectLanguage,
   ChatDeleteMessageTooltip,
+  ValidateNtfsLabel,
+  ValidateNtfsDescription,
+  RecordedAt,
+  EncodedWith,
+  CharacterFilterAdd,
+  CharacterFilterActive,
+  CharacterFilterSelectFromRecent,
+  CharacterFilterAddManual,
+  ClipSourceTooltip,
+  ClipSourceUnavailableTooltip,
+  DeleteSelectionContainsLocked,
 }
 
 enum Language {

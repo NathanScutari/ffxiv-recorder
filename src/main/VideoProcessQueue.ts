@@ -5,6 +5,8 @@ import ConfigService from '../config/ConfigService';
 import {
   CloudMetadata,
   DiskStatus,
+  KillVideoQueueItem,
+  KillVideoStatus,
   RendererVideo,
   SaveStatus,
   UploadQueueItem,
@@ -17,7 +19,8 @@ import {
   getFileInfo,
   fixPathWhenPackaged,
   logAxiosError,
-  tryUnlink,
+  buildKillVideoMetadata,
+  getOBSFormattedDate,
 } from './util';
 import CloudClient from '../storage/CloudClient';
 import { send } from './main';
@@ -25,15 +28,22 @@ import ffmpeg from 'fluent-ffmpeg';
 import axios from 'axios';
 import DiskClient from 'storage/DiskClient';
 import Recorder from './Recorder';
+import { promises as fspromise } from 'fs';
 
 const atomicQueue = require('atomic-queue');
+const devMode = process.env.NODE_ENV === 'development';
+const isDebug = devMode || process.env.DEBUG_PROD === 'true';
 
-const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-const ffmpegInstallerPath = fixPathWhenPackaged(ffmpegInstaller.path);
-ffmpeg.setFfmpegPath(ffmpegInstallerPath);
+// Use the dynamically linked ffmpeg.exe we package with OBS in noobs. This
+// allows us to avoid including a static ffmpeg.exe which is an extra 60MB.
+const ffmpegPathRel = 'node_modules/noobs/dist/bin/ffmpeg.exe';
 
-const isDebug =
-  process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true';
+let ffmpegPathAbs = devMode
+  ? path.resolve(__dirname, '../../release/app/', ffmpegPathRel)
+  : path.resolve(__dirname, '../../', ffmpegPathRel);
+
+ffmpegPathAbs = fixPathWhenPackaged(ffmpegPathAbs);
+ffmpeg.setFfmpegPath(ffmpegPathAbs);
 
 /**
  * A queue for cutting videos to size.
@@ -70,6 +80,12 @@ export default class VideoProcessQueue {
   private downloadQueue: any;
 
   /**
+   * The kill video queue re-encoder a video from multiple perspectives into a
+   * single video file. This is naturally computationally expensive.
+   */
+  private killVideoQueue: any;
+
+  /**
    * Config service handle.
    */
   private cfg = ConfigService.getInstance();
@@ -89,12 +105,19 @@ export default class VideoProcessQueue {
   private inProgressDownloads: string[] = [];
 
   /**
+   * List of kill video job uuids currently in in the queue for
+   * processing, or in progress currently.
+   */
+  private inProgressKillVideos: string[] = [];
+
+  /**
    * Constructor.
    */
   private constructor() {
     this.videoQueue = this.createVideoQueue();
     this.uploadQueue = this.createUploadQueue();
     this.downloadQueue = this.createDownloadQueue();
+    this.killVideoQueue = this.createKillVideoQueue();
   }
 
   private createVideoQueue() {
@@ -151,6 +174,24 @@ export default class VideoProcessQueue {
     return queue;
   }
 
+  private createKillVideoQueue() {
+    const worker = this.processKillVideoQueueItem.bind(this);
+    const settings = { concurrency: 1 };
+    const queue = atomicQueue(worker, settings);
+
+    /* eslint-disable prettier/prettier */
+    queue
+      .on('error', VideoProcessQueue.errorKillVideo)
+      .on('idle', () => { this.videoQueueEmpty() });
+
+    queue.pool
+      .on('start', (item: KillVideoQueueItem) => { this.startedProcessingKillVideo(item) })
+      .on('finish', (_: unknown, item: KillVideoQueueItem) => { this.finishProcessingKillVideo(item) });
+    /* eslint-enable prettier/prettier */
+
+    return queue;
+  }
+
   /**
    * Add a video to the queue for processing, the processing it undergoes is
    * dictated by the input. This is the only public method on this class.
@@ -171,7 +212,7 @@ export default class VideoProcessQueue {
       return;
     }
 
-    console.log('[VideoProcessQueue] Queuing video for upload', item.path);
+    console.info('[VideoProcessQueue] Queuing video for upload', item.path);
     this.inProgressUploads.push(item.path);
     this.uploadQueue.write(item);
 
@@ -191,12 +232,21 @@ export default class VideoProcessQueue {
       return;
     }
 
-    console.log('[VideoProcessQueue] Queuing video for download', videoName);
+    console.info('[VideoProcessQueue] Queuing video for download', videoName);
     this.inProgressDownloads.push(videoName);
     this.downloadQueue.write(video);
 
     const queued = Math.max(0, this.inProgressDownloads.length);
     send('updateDownloadQueueLength', queued);
+  };
+
+  /**
+   * Queue up a kill video for creation.
+   */
+  public queueCreateKillVideo = async (item: KillVideoQueueItem) => {
+    console.info('[VideoProcessQueue] Queue kill video for processing');
+    this.inProgressKillVideos.push(item.uuid);
+    this.killVideoQueue.write(item);
   };
 
   /**
@@ -213,13 +263,12 @@ export default class VideoProcessQueue {
       // In a lot of cases this is basically just a copy. But this also
       // covers the cases where we're cutting a section off the end of
       // the video due to a timeout.
-      const videoPath = await this.cutVideo(
-        data.source,
-        outputDir,
-        data.suffix,
-        data.offset,
-        data.duration,
-      );
+      const videoPath = await this.cutVideo(data, outputDir);
+
+      // Add the size of the newly cut video. We can't do this earlier
+      // as the size will change when we cut/remux.
+      const stat = await fspromise.stat(videoPath);
+      data.metadata.size = stat.size;
 
       await writeMetadataFile(videoPath, data.metadata);
 
@@ -363,6 +412,88 @@ export default class VideoProcessQueue {
   }
 
   /**
+   * Create a kill video. This is CPU intensive and involves re-encoding. We
+   * build a complex filter graph to stitch together the different perspectives
+   * with video and audio transitions.
+   */
+  private async processKillVideoQueueItem(
+    item: KillVideoQueueItem,
+    done: () => void,
+  ): Promise<void> {
+    if (item.segments.length < 2) {
+      // Programmer error. Can't make kill videos of less than 2 segments.
+      console.error('[VideoProcessQueue] Less than 2 segments');
+      done();
+      return;
+    }
+
+    const first = item.segments[0].video;
+    const videoPath = VideoProcessQueue.prepareKillVideoPath(first);
+    const audioMap = VideoProcessQueue.prepareKillVideoAudioMap(item);
+    const filter = VideoProcessQueue.prepareKillVideoComplexFilter(item);
+
+    const fn = ffmpeg()
+      .complexFilter(filter)
+      .outputOption('-movflags +faststart')
+      .outputOption('-map [v]')
+      .outputOption(audioMap)
+      .outputOption('-shortest')
+      .outputOption('-c:v libx264')
+      .outputOption('-crf 22') // Matches "Ultra" in the Recorder.
+      .outputOption('-c:a aac')
+      .outputOption('-preset fast')
+      .outputOption('-pix_fmt yuv420p')
+      .outputOption('-xerror') // Die on error.
+      .output(videoPath);
+
+    item.segments
+      .map((seg) => seg.video.videoSource)
+      .forEach((src) => {
+        console.info('[VideoProcessQueue] Adding source to ffmpeg:', src);
+        fn.input(src);
+      });
+
+    try {
+      console.time(`[VideoProcessQueue] Create ${item.uuid} kill video`);
+
+      // The ffmpeg command is constructed so now do the actual work. A
+      // reminder: this is a full re-encode and is computationally expensive.
+      await VideoProcessQueue.ffmpegWrapper(
+        fn,
+        'Make kill Video',
+        (progress: number) => this.onKillVideoProgress(progress),
+      );
+
+      console.timeEnd(`[VideoProcessQueue] Create ${item.uuid} kill video`);
+
+      // Ffmpeg is done. Write out the metadata for the newly generated clip.
+      const baseMetadata = rendererVideoToMetadata({ ...first }); // Close as will mutate.
+      const metadata = buildKillVideoMetadata(baseMetadata, item.segments);
+      await writeMetadataFile(videoPath, metadata);
+
+      const readyToUpload = await CloudClient.getInstance().ready();
+      const upload = readyToUpload && shouldUpload(this.cfg, metadata);
+
+      if (upload) {
+        const item: UploadQueueItem = { path: videoPath };
+        this.queueUpload(item);
+      }
+    } finally {
+      done();
+    }
+  }
+
+  /**
+   * Push kill video encoding progress to the frontend.
+   */
+  private onKillVideoProgress(progress: number) {
+    const queued = Math.max(0, this.inProgressKillVideos.length);
+    const perc = Math.round(progress);
+    const status: KillVideoStatus = { queued, perc };
+    send('updateKillVideoStatus', status);
+  }
+
+  /**
    * Log an error processing the video.
    */
   private static errorProcessingVideo(err: unknown) {
@@ -384,6 +515,13 @@ export default class VideoProcessQueue {
   }
 
   /**
+   * Log an error processing a kill video.
+   */
+  private static errorKillVideo(err: unknown) {
+    console.error('[VideoProcessQueue] Error creating kill video', String(err));
+  }
+
+  /**
    * Log we are starting the processing and update the saving status icon.
    */
   private startedProcessingVideo(item: VideoQueueItem) {
@@ -400,23 +538,40 @@ export default class VideoProcessQueue {
     send('updateSaveStatus', SaveStatus.NotSaving);
     DiskClient.getInstance().refreshStatus();
     DiskClient.getInstance().refreshVideos();
+  }
 
-    // Delete the source file if it's not a clip. Clips source files should be retained.
-    if (!item.clip) {
-      console.info('[VideoProcessQueue] Deleting source file', item.source);
-      let success = await tryUnlink(item.source);
+  /**
+   * Actions on starting the processing of a kill video.
+   */
+  private startedProcessingKillVideo(item: KillVideoQueueItem) {
+    console.info('[VideoProcessQueue] Now processing kill video');
 
-      if (!success) {
-        // Wait a couple of seconds and try again.
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        success = await tryUnlink(item.source);
-      }
+    const status: KillVideoStatus = {
+      queued: Math.max(0, this.inProgressKillVideos.length),
+      perc: 0,
+    };
 
-      if (!success) {
-        // Not much else to do than log it.
-        console.warn('[VideoProcessQueue] Failed to delete src', item.source);
-      }
-    }
+    send('updateKillVideoStatus', status);
+  }
+
+  /**
+   * Actions on finishing processing a kill video.
+   */
+  private finishProcessingKillVideo(item: KillVideoQueueItem) {
+    console.info('[VideoProcessQueue] Finished processing kill video');
+
+    this.inProgressKillVideos = this.inProgressKillVideos.filter(
+      (id) => id !== item.uuid,
+    );
+
+    const status: KillVideoStatus = {
+      perc: 0,
+      queued: Math.max(0, this.inProgressKillVideos.length),
+    };
+
+    send('updateKillVideoStatus', status);
+    DiskClient.getInstance().refreshStatus();
+    DiskClient.getInstance().refreshVideos();
   }
 
   /**
@@ -480,7 +635,7 @@ export default class VideoProcessQueue {
 
     // Run the size monitor.
     const sizeMonitor = new DiskSizeMonitor();
-    sizeMonitor.run();
+    await sizeMonitor.run();
 
     // Tidy the recording dir.
     const cfg = ConfigService.getInstance();
@@ -537,21 +692,16 @@ export default class VideoProcessQueue {
   /**
    * Returns the full path for a video cut operation's output file.
    */
-  private static getOutputVideoPath(
-    sourceFile: string,
-    outputDir: string,
-    suffix: string | undefined,
-  ) {
-    // Can be either ".mp4" if clipping or ".mkv" if regular recording.
-    const extension = sourceFile.slice(-4);
-    let videoName = path.basename(sourceFile, extension);
+  private static getOutputVideoPath(data: VideoQueueItem, outputDir: string) {
+    let videoName = data.name;
 
-    if (suffix) {
+    if (data.suffix) {
       videoName += ' - ';
-      videoName += suffix;
+      videoName += data.suffix;
     }
 
     videoName = VideoProcessQueue.sanitizeFilename(videoName);
+
     // Always output MP4. MKV is just an intermediate format.
     return path.join(outputDir, `${videoName}.mp4`);
   }
@@ -563,36 +713,30 @@ export default class VideoProcessQueue {
    * timeout.
    */
   private async cutVideo(
-    srcFile: string,
+    data: VideoQueueItem,
     outputDir: string,
-    suffix: string | undefined,
-    offset: number,
-    duration: number,
   ): Promise<string> {
     console.info('[VideoProcessQueue] Cutting video:', {
-      srcFile,
+      name: data.name,
+      source: data.source,
       outputDir,
-      suffix,
-      offset,
-      duration,
+      suffix: data.suffix,
+      offset: data.offset,
+      duration: data.duration,
     });
 
-    let start = offset;
+    let start = data.offset;
 
-    if (offset < 0) {
+    if (data.offset < 0) {
       console.warn('[VideoProcessQueue] Negative offset set to zero');
       start = 0; // Sanity check.
     }
 
-    const outputPath = VideoProcessQueue.getOutputVideoPath(
-      srcFile,
-      outputDir,
-      suffix,
-    );
+    const outputPath = VideoProcessQueue.getOutputVideoPath(data, outputDir);
 
-    const fn = ffmpeg(srcFile)
+    const fn = ffmpeg(data.source)
       .setStartTime(start)
-      .setDuration(duration)
+      .setDuration(data.duration)
       // Crucially we copy the video and audio, so we don't do any
       // re-encoding which would take time and CPU.
       .withVideoCodec('copy')
@@ -601,8 +745,6 @@ export default class VideoProcessQueue {
       // some players, but does extend the video slightly depending on
       // the keyframe alignment.
       .outputOption('-avoid_negative_ts make_zero')
-      // Move the moov atom to the start of the file for faster playback start.
-      // This means R2 doesn't need to seek to the end to start playback.
       .outputOption('-movflags +faststart')
       .output(outputPath);
 
@@ -619,7 +761,11 @@ export default class VideoProcessQueue {
    * @param fn the ffmpeg function to wrap
    * @param descr a description of the command for logging
    */
-  private static async ffmpegWrapper(fn: ffmpeg.FfmpegCommand, descr: string) {
+  private static async ffmpegWrapper(
+    fn: ffmpeg.FfmpegCommand,
+    descr: string,
+    progressCallback?: (progress: number) => void,
+  ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const handleErr = (err: unknown) => {
         const msg = `[VideoProcessQueue] ${descr} failed! ${String(err)}`;
@@ -655,6 +801,14 @@ export default class VideoProcessQueue {
           progress.percent?.toFixed(0),
           '%',
         );
+
+        if (
+          progressCallback &&
+          progress.percent !== undefined && // Technically covered by isFinite but typescript is dumb.
+          Number.isFinite(progress.percent) // Sometimes ffmpeg-fluent gives NaN.
+        ) {
+          progressCallback(progress.percent);
+        }
       };
 
       fn.on('start', handleStart)
@@ -664,5 +818,94 @@ export default class VideoProcessQueue {
         .on('progress', onProgress)
         .run();
     });
+  }
+
+  /**
+   * Prepare and return the output path for a kill video.
+   */
+  private static prepareKillVideoPath(video: RendererVideo) {
+    const videoDate = video.start ?? video.mtime;
+
+    let videoName = getOBSFormattedDate(new Date(videoDate));
+    videoName += ` - Multiview`;
+
+    // We checked earlier that segments isn't empty so not
+    // worrying about checking for undefined here.
+    if (video.encounterName && video.difficulty) {
+      // We should always have these fields for raids, and raids are
+      // the only supported kill video category.
+      videoName += ` - ${video.encounterName}`;
+      videoName += ` [${video.difficulty}]`;
+    }
+
+    videoName += ` - Rendered at ${getOBSFormattedDate(new Date())}`;
+    // Encounter metadata can contain characters Windows rejects in filenames,
+    // so apply the same sanitizer used for normal video cuts.
+    videoName = VideoProcessQueue.sanitizeFilename(videoName);
+    const storageDir = ConfigService.getInstance().get<string>('storagePath');
+    const videoPath = path.join(storageDir, `${videoName}.mp4`);
+
+    console.info('[VideoProcessQueue] Kill video path:', videoPath);
+    return videoPath;
+  }
+
+  /**
+   * Prepare and return the audio map for a kill video.
+   */
+  private static prepareKillVideoAudioMap(item: KillVideoQueueItem) {
+    const map =
+      item.audioTrackIndex === -1
+        ? '-map [a]'
+        : `-map ${item.audioTrackIndex}:a`;
+
+    console.info('[VideoProcessQueue] Audio map filter:', map);
+    return map;
+  }
+
+  /**
+   * Prepare and return an ffmpeg complex filter graph that does the
+   * appropriate trimming, scaling, padding and fading to render a kill
+   * video.
+   */
+  private static prepareKillVideoComplexFilter(item: KillVideoQueueItem) {
+    let filter = '';
+
+    item.segments.forEach((pov, idx) => {
+      const segmentDuration = pov.stop - pov.start;
+      const fadeDuration = 1;
+      const fadeOutStart = Math.max(0, segmentDuration - fadeDuration);
+
+      const scale = `${item.width}:-2`;
+      const pad = `${item.width}:${item.height}:(ow-iw)/2:(oh-ih)/2`;
+
+      const fadeIn = `t=in:st=0:d=${fadeDuration}`;
+      const fadeOut = `t=out:st=${fadeOutStart}:d=${fadeDuration}`;
+
+      const trim = `start=${pov.start}:end=${pov.stop}`;
+
+      // Video
+      filter +=
+        `[${idx}:v]trim=${trim},setpts=PTS-STARTPTS,` +
+        `fps=${item.fps},scale=${scale},pad=${pad},` +
+        `fade=${fadeIn},fade=${fadeOut}[v${idx}];`;
+
+      if (item.audioTrackIndex === -1) {
+        // Audio
+        filter +=
+          `[${idx}:a]atrim=${trim},asetpts=PTS-STARTPTS,` +
+          `afade=${fadeIn},afade=${fadeOut}[a${idx}];`;
+      }
+    });
+
+    if (item.audioTrackIndex === -1) {
+      const inputs = item.segments.map((_, i) => `[v${i}][a${i}]`).join('');
+      filter += `${inputs}concat=n=${item.segments.length}:v=1:a=1[v][a]`;
+    } else {
+      const inputs = item.segments.map((_, i) => `[v${i}]`).join('');
+      filter += `${inputs}concat=n=${item.segments.length}:v=1:a=0[v]`;
+    }
+
+    console.info('[VideoProcessQueue] Generated filter:', filter);
+    return filter;
   }
 }

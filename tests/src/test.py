@@ -24,6 +24,8 @@ import retail.rated_solo_shuffle
 import retail.skirmish
 import retail.wargame_3v3
 import retail.zone_changes
+import retail.beloren_boss_hp
+import retail.raid_holy_priest_angel_death
 
 # Import the classic tests
 import classic.battleground
@@ -66,6 +68,8 @@ RETAIL_TESTS = [
     retail.skirmish,
     retail.wargame_3v3,
     retail.zone_changes,
+    retail.beloren_boss_hp,
+    retail.raid_holy_priest_angel_death,
 ]
 
 CLASSIC_TESTS = [
@@ -187,6 +191,28 @@ def check_boss_count(num):
         sys.exit(1)
 
 
+def check_hp(perc: int):
+    """Check the boss HP percentage."""
+    metadata = get_latest_metadata()
+
+    if perc == metadata["bossPercent"]:
+        print("  Boss HP percentage as expected")
+    else:
+        print(f"FAILED: Boss HP percentage not as expected, was {metadata['bossPercent']} but expected {perc}")
+        sys.exit(1)
+
+
+def check_deaths(num: int):
+    """Check the number of deaths in the run."""
+    metadata = get_latest_metadata()
+
+    if num == len(metadata["deaths"]):
+        print("  Death count as expected")
+    else:
+        print(f"FAILED: Death count not as expected, was {len(metadata['deaths'])} but expected {num}")
+        sys.exit(1)
+
+
 def close_sleep_open(file, sec, path):
     """Close a file handle, sleep, and then re-open the file with a new handle. This is
     required to emulate the behaviour of the WoW client writing logs."""
@@ -278,6 +304,14 @@ def run_test(flavour, test):
     if hasattr(test, "BOSSES"):
         print(f"  Check run contains {test.BOSSES} bosses")
         check_boss_count(test.BOSSES)
+
+    if hasattr(test, "HP"):
+        print(f"  Check boss HP is {test.HP}%")
+        check_hp(test.HP)
+
+    if hasattr(test, "DEATHS"):
+        print(f"  Check run contains {test.DEATHS} deaths")
+        check_deaths(test.DEATHS)
 
     print("  PASSED")
 

@@ -10,7 +10,14 @@ import {
 } from 'main/types';
 import path from 'path';
 import { z } from 'zod';
-import { Affiliation, ChatMessageWithId, TAffiliation } from 'types/api';
+import {
+  Affiliation,
+  ChatMessageWithId,
+  KeystoneTimerResponse,
+  PublicGuildInfo,
+  TAffiliation,
+  TKeystoneTimerResponse,
+} from 'types/api';
 import WebSocket, { RawData } from 'ws';
 import {
   cloudSignedMetadataToRendererVideo,
@@ -73,6 +80,11 @@ export default class CloudClient implements StorageClient {
   private authorized = false;
 
   /**
+   * Whether the selected guild has been migrated or not.
+   */
+  private migrated = false;
+
+  /**
    * The username of the cloud user.
    */
   private user = '';
@@ -112,11 +124,6 @@ export default class CloudClient implements StorageClient {
    * Available guilds the user can choose from.
    */
   private affiliations: TAffiliation[] = [];
-
-  /**
-   * The last modified time of the shared storage.
-   */
-  private bucketLastMod = 0;
 
   /**
    * The auth header for the WCR API, which uses basic HTTP auth using the cloud
@@ -274,7 +281,9 @@ export default class CloudClient implements StorageClient {
    * Check if the client is ready for use.
    */
   public async ready() {
-    return this.enabled && this.authenticated && this.authorized;
+    return (
+      this.enabled && this.authenticated && this.authorized && !this.migrated
+    );
   }
 
   /**
@@ -315,6 +324,7 @@ export default class CloudClient implements StorageClient {
       read: this.read,
       write: this.write,
       del: this.del,
+      migrated: this.migrated,
     };
 
     const rdy = await this.ready();
@@ -443,6 +453,7 @@ export default class CloudClient implements StorageClient {
     this.authorized = false;
     this.user = '';
     this.pass = '';
+    this.migrated = false;
     this.authHeader = undefined;
     this.guild = '';
     this.affiliations = [];
@@ -544,6 +555,17 @@ export default class CloudClient implements StorageClient {
     // If we got this far the user is authorized for their configuration.
     this.authorized = true;
 
+    // Check the guild hasn't been migrated. If it is the user should
+    // login with WCL.
+    const info = await this.getGuildInfo();
+
+    if (info.migrated) {
+      console.warn('[CloudClient] Guild has been migrated');
+      this.migrated = true;
+      this.refreshStatus();
+      return;
+    }
+
     try {
       const usagePromise = this.getUsage();
       const limitPromise = this.getStorageLimit();
@@ -556,12 +578,8 @@ export default class CloudClient implements StorageClient {
       return;
     }
 
-    await this.pollInit();
     this.startPolling();
-
-    //
     this.refreshStatus();
-    this.refreshVideos();
   }
 
   /**
@@ -594,8 +612,6 @@ export default class CloudClient implements StorageClient {
       'to video database.',
     );
 
-    // Update the mtime to avoid multiple refreshes.
-    this.bucketLastMod = Date.now();
     this.refreshStatus();
 
     // Always run the housekeeper after an upload so that there
@@ -759,22 +775,6 @@ export default class CloudClient implements StorageClient {
   }
 
   /**
-   * Initialize the bucketLastMod time by reading it from the mtime object in
-   * R2. If the mtime object doesn't exist, we will create it.
-   */
-  public async pollInit() {
-    console.info('[CloudClient] Initialize cloud polling');
-
-    try {
-      const mtime = await this.getMtime();
-      this.bucketLastMod = mtime;
-    } catch (error) {
-      console.error('[CloudClient] Error getting mtime', String(error));
-      throw new Error('Error getting mtime from R2');
-    }
-  }
-
-  /**
    * Start listening for updates using WebSocket.
    */
   public startPolling() {
@@ -784,8 +784,7 @@ export default class CloudClient implements StorageClient {
   }
 
   /**
-   * Stop listening for updates using WebSocket. Should only be called before
-   * on destroying this class as there is no way to restart the timers.
+   * Stop listening for updates using WebSocket.
    */
   public stopPolling() {
     console.info('[CloudClient] Stop WebSocket polling');
@@ -812,15 +811,16 @@ export default class CloudClient implements StorageClient {
     const guild = encodeURIComponent(this.guild);
     const url = `${CloudClient.poll}?guild=${guild}`;
     const headers = { Authorization: this.authHeader };
-    this.ws = new WebSocket(url, { headers });
+    this.ws = new WebSocket(url, { headers, followRedirects: true });
 
     this.ws.on('open', () => {
       console.info('[CloudClient] WebSocket connection established');
 
-      // Once the websocket is open we do a single manual check for
-      // updates to make sure we are up to date. After this we can
-      // rely on the websocket to notify us of changes.
-      this.checkForUpdate();
+      // Once the websocket is open we do a single pull of all the data. After
+      // this we can rely on the websocket to notify us of changes. We will
+      // come through this again if the websocket has to reconnect so we can
+      // be sure we won't have missed updates meanwhile.
+      this.pullCloudData();
 
       // Any open chat windows must be refreshed in case we missed
       // messages while the websocket was disconnected.
@@ -934,51 +934,12 @@ export default class CloudClient implements StorageClient {
   }
 
   /**
-   * Get the mtime object from R2, this keeps track of the most recent
-   * modification time to any R2 data.
+   * Pull the entire guild state from the WCR API and refresh the frontend.
    */
-  private async getMtime(): Promise<number> {
-    const headers = { Authorization: this.authHeader };
-    const guild = encodeURIComponent(this.guild);
-    const url = `${CloudClient.api}/guild/${guild}/mtime`;
-
-    const response = await axios.get(url, {
-      headers,
-      validateStatus: (s) => this.validateResponseStatus(s),
-    });
-
-    const { data } = response;
-    const { mtime } = data;
-    return mtime;
-  }
-
-  /**
-   * Check if the guild mtime value matches what we think it is, if it doesn't
-   * we need to trigger a UI refresh. This should only be called on startup and
-   * in the event of a Websocket reconnecting, beyond that we rely on the Websocket
-   * messages to keep the client in sync.
-   */
-  private async checkForUpdate() {
-    console.info('[CloudClient] Checking guild for updates');
+  private async pullCloudData() {
+    console.info('[CloudClient] Refresh cloud data');
 
     try {
-      const mtime = await this.getMtime();
-
-      if (mtime <= this.bucketLastMod) {
-        console.info(
-          '[CloudClient] No changes detected',
-          mtime,
-          this.bucketLastMod,
-        );
-        return;
-      }
-
-      console.info(
-        '[CloudClient] Cloud data changed:',
-        mtime,
-        this.bucketLastMod,
-      );
-
       // Trigger videos to be refreshed. No need to await this.
       this.refreshVideos();
 
@@ -988,11 +949,11 @@ export default class CloudClient implements StorageClient {
       this.usage = await usagePromise;
       this.limit = await limitPromise;
       this.refreshStatus();
-
-      // Update the last modified time now we have refreshed.
-      this.bucketLastMod = mtime;
     } catch (error) {
-      console.error('[CloudClient] Failed to check for update', String(error));
+      console.error(
+        '[CloudClient] Failed to refresh cloud data',
+        String(error),
+      );
     }
   }
 
@@ -1264,7 +1225,7 @@ export default class CloudClient implements StorageClient {
 
   private setupListeners() {
     ipcMain.on('reconfigureCloud', async () => {
-      console.log('[CloudClient] Reconfiguring cloud client');
+      console.info('[CloudClient] Reconfiguring cloud client');
       this.configure();
     });
 
@@ -1274,7 +1235,7 @@ export default class CloudClient implements StorageClient {
       clipboard.writeText(shareable);
     });
 
-    ipcMain.on('deleteVideos', async (_event, args) => {
+    ipcMain.on('deleteVideosCloud', async (_event, args) => {
       const videos = args as RendererVideo[];
       const toDelete = videos.filter((v) => v.cloud).map((v) => v.videoName);
       if (toDelete.length < 1) return;
@@ -1282,7 +1243,7 @@ export default class CloudClient implements StorageClient {
     });
 
     // VideoButton event listeners.
-    ipcMain.on('videoButton', async (_event, args) => {
+    ipcMain.on('videoButtonCloud', async (_event, args) => {
       const ready = await this.ready();
       const action = args[0] as string;
 
@@ -1417,12 +1378,6 @@ export default class CloudClient implements StorageClient {
       return;
     }
 
-    if (key === GuildMessages.MTIME) {
-      console.info('[CloudClient] Guild mtime message received', value);
-      this.bucketLastMod = parseInt(value, 10);
-      return;
-    }
-
     console.info('[CloudClient] No action on this message');
   }
 
@@ -1543,5 +1498,43 @@ export default class CloudClient implements StorageClient {
     });
 
     console.info('[CloudClient] Successfully deleted chat message with id', id);
+  }
+
+  public async getKeystoneTimers(
+    mapId: number,
+  ): Promise<TKeystoneTimerResponse> {
+    console.info('[CloudClient] Get keystone timers for', mapId);
+    const url = `${CloudClient.api}/keystone/timer/${mapId}`;
+
+    const rsp = await axios.get(url, {
+      validateStatus: (s) => this.validateResponseStatus(s),
+    });
+
+    const { data } = rsp;
+    const parsed = KeystoneTimerResponse.parse(data);
+
+    console.info(
+      '[CloudClient] Successfully got keystone timers for',
+      mapId,
+      parsed,
+    );
+
+    return parsed;
+  }
+
+  public async getGuildInfo() {
+    console.info('[CloudClient] Get guild info for guild', this.guild);
+
+    const url = `${CloudClient.api}/guild/${encodeURIComponent(this.guild)}`;
+    const headers = { Authorization: this.authHeader };
+
+    const rsp = await axios.get(url, {
+      headers,
+      validateStatus: (s) => this.validateResponseStatus(s),
+    });
+
+    const info = PublicGuildInfo.parse(rsp.data);
+    console.info('[CloudClient] Successfully got guild info', info);
+    return info;
   }
 }

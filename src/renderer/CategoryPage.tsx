@@ -1,9 +1,15 @@
 import * as React from 'react';
-import { AppState, RendererVideo } from 'main/types';
+import {
+  AppState,
+  RendererClip,
+  RendererVideo,
+  StorageFilter,
+} from 'main/types';
 import {
   Dispatch,
-  MutableRefObject,
+  RefObject,
   SetStateAction,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -25,6 +31,8 @@ import SearchBar from './SearchBar';
 import VideoMarkerToggles from './VideoMarkerToggles';
 import { useSettings } from './useSettings';
 import {
+  findClipParent,
+  getFriendlyCodecName,
   getVideoCategoryFilter,
   getVideoStorageFilter,
   povDiskFirstNameSort,
@@ -40,7 +48,7 @@ import { Direction } from 're-resizable/lib/resizer';
 import VideoPlayer, { VideoPlayerRef } from './VideoPlayer';
 import Label from './components/Label/Label';
 import ViewpointSelection from './components/Viewpoints/ViewpointSelection';
-import useTable from './components/Tables/TableData';
+import useVideoSelectionTable from './components/Tables/useVideoSelectionTable';
 import { Tooltip } from './components/Tooltip/Tooltip';
 import DateRangePicker from './DateRangePicker';
 import StorageFilterToggle from './StorageFilterToggle';
@@ -56,8 +64,8 @@ interface IProps {
   setVideoState: Dispatch<SetStateAction<RendererVideo[]>>;
   appState: AppState;
   setAppState: Dispatch<SetStateAction<AppState>>;
-  persistentProgress: MutableRefObject<number>;
-  playerHeight: MutableRefObject<number>;
+  persistentProgress: RefObject<number>;
+  playerHeight: RefObject<number>;
 }
 
 /**
@@ -107,8 +115,50 @@ const CategoryPage = (props: IProps) => {
     return correlatedState.filter(queryFilter);
   }, [correlatedState, dateRangeFilter, videoFilterTags, language]);
 
-  // The data backing the video selection table.
-  const table = useTable(filteredState, appState, setVideoState);
+  // Tanstack table relies on stable references, so while we have the React
+  // compiler enabled we still need useCallback here or weird stuff will happen.
+  const getClipParent = useCallback(
+    (clip: RendererClip) => {
+      return findClipParent(clip, videoState);
+    },
+    [videoState],
+  );
+
+  const goToClipParent = useCallback(
+    (clip: RendererClip) => {
+      const parent = getClipParent(clip);
+
+      if (parent) {
+        persistentProgress.current =
+          clip.parentVideoOffset && clip.parentVideoOffset > 0
+            ? clip.parentVideoOffset
+            : 0;
+
+        setAppState((prevState) => ({
+          ...prevState,
+          category: parent.category,
+          selectedVideos: [parent],
+          multiPlayerMode: false,
+          playing: false,
+          videoFilterTags: [],
+          storageFilter: StorageFilter.BOTH,
+          dateRangeFilter: {
+            startDate: null,
+            endDate: null,
+          },
+        }));
+      }
+    },
+    [getClipParent, persistentProgress, setAppState],
+  );
+
+  const table = useVideoSelectionTable(
+    filteredState,
+    appState,
+    setVideoState,
+    getClipParent,
+    goToClipParent,
+  );
 
   const haveVideos = categoryState.length > 0;
   const isClips = category === VideoCategory.Clips;
@@ -186,7 +236,10 @@ const CategoryPage = (props: IProps) => {
     playerHeight.current = height;
   };
 
-  const renderDrawerOpen = () => {
+  const renderDrawerOpen = (
+    appVersion: string | undefined,
+    encoder: string | undefined,
+  ) => {
     // Only the first row in the selection is relevant for the drawer display.
     const selectedRows = table.getSelectedRowModel().rows;
     const selectedRow = selectedRows[0];
@@ -201,6 +254,24 @@ const CategoryPage = (props: IProps) => {
       (rv) => rv.cloud && rv.uniqueHash && rv.start,
     );
 
+    const renderTextDescr = () => {
+      return (
+        <div className="flex items-center justify-start w-full h-[40px] pt-2 mx-2 text-sm font-bold text-foreground">
+          {appVersion && (
+            <>
+              {getLocalePhrase(language, Phrase.RecordedAt)} v{appVersion}.{' '}
+            </>
+          )}
+          {encoder && (
+            <>
+              {getLocalePhrase(language, Phrase.EncodedWith)}{' '}
+              {getFriendlyCodecName(encoder)}.
+            </>
+          )}
+        </div>
+      );
+    };
+
     return (
       <div className="max-w-[500px] min-w-[500px] h-full bg-background-higher flex flex-col mx-2 gap-y-2">
         <div className="flex items-start">
@@ -214,6 +285,7 @@ const CategoryPage = (props: IProps) => {
           >
             <ArrowRightToLine size={18} />
           </Button>
+          {renderTextDescr()}
         </div>
         <div className="flex items-center justify-center w-full">
           <ViewpointSelection
@@ -257,6 +329,12 @@ const CategoryPage = (props: IProps) => {
     const videosToPlay =
       selectedVideos.length > 0 ? selectedVideos : povs.slice(0, 1);
 
+    const selectedVideoAppVersion =
+      videosToPlay.length > 1 ? undefined : videosToPlay[0].appVersion;
+
+    const selectedVideoEncoder =
+      videosToPlay.length > 1 ? undefined : videosToPlay[0].encoder;
+
     return (
       <Resizable
         ref={resizableRef}
@@ -264,7 +342,16 @@ const CategoryPage = (props: IProps) => {
           height: `${playerHeight.current}px`,
           width: '100%',
         }}
-        enable={{ bottom: true }}
+        enable={{
+          top: false,
+          right: false,
+          bottom: true,
+          left: false,
+          topRight: false,
+          bottomRight: false,
+          bottomLeft: false,
+          topLeft: false,
+        }}
         bounds="parent"
         onResize={onResize}
         minHeight={chatOpen ? 500 : undefined}
@@ -286,6 +373,7 @@ const CategoryPage = (props: IProps) => {
         <div className="flex h-full w-full">
           <VideoPlayer
             ref={videoPlayerRef}
+            instantReplay={null}
             key={videosToPlay.map((rv) => rv.videoName + rv.cloud).join(', ')}
             videos={videosToPlay}
             categoryState={categoryState}
@@ -295,7 +383,8 @@ const CategoryPage = (props: IProps) => {
             setAppState={setAppState}
           />
 
-          {chatOpen && renderDrawerOpen()}
+          {chatOpen &&
+            renderDrawerOpen(selectedVideoAppVersion, selectedVideoEncoder)}
           {!chatOpen && renderDrawerClosed()}
         </div>
       </Resizable>
@@ -355,10 +444,19 @@ const CategoryPage = (props: IProps) => {
       protect: boolean,
       videos: RendererVideo[],
     ) => {
-      window.electron.ipcRenderer.sendMessage('videoButton', [
+      const toProtectDisk = videos.filter((v) => !v.cloud);
+      const toProtectCloud = videos.filter((v) => v.cloud);
+
+      window.electron.ipcRenderer.sendMessage('videoButtonDisk', [
         'protect',
         protect,
-        videos,
+        toProtectDisk,
+      ]);
+
+      window.electron.ipcRenderer.sendMessage('videoButtonCloud', [
+        'protect',
+        protect,
+        toProtectCloud,
       ]);
 
       setVideoState((prev) => {
@@ -593,7 +691,7 @@ const CategoryPage = (props: IProps) => {
 
   const openSetupInstructions = () => {
     window.electron.ipcRenderer.sendMessage('openURL', [
-      'https://www.warcraftrecorder.com/about',
+      'https://www.warcraftrecorder.com/setup',
     ]);
   };
 
